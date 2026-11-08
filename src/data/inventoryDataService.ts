@@ -40,8 +40,8 @@ import {
 } from "../storage/repository"
 import {
   pickCloudEntries,
-  supabaseInventorySync,
-} from "./supabaseInventorySync"
+  firebaseInventorySync,
+} from "./firebaseInventorySync"
 
 export { INVENTORY_STORAGE_KEYS }
 
@@ -381,6 +381,141 @@ export function prepareBackupReplacements(backup: InventoryBackup) {
   return restored
 }
 
+export function mergeLocationWeights(
+  local: Record<InventoryLocation, Record<string, number | null>>,
+  remote: Record<InventoryLocation, Record<string, number | null>>,
+  localRole: DeviceRole | null,
+): Record<InventoryLocation, Record<string, number | null>> {
+  const localButcher = local.butcher ?? {}
+  const remoteButcher = remote.butcher ?? {}
+  const localRestaurant = local.restaurant ?? {}
+  const remoteRestaurant = remote.restaurant ?? {}
+
+  let mergedButcher: Record<string, number | null>
+  let mergedRestaurant: Record<string, number | null>
+
+  if (localRole === "butcher") {
+    mergedButcher = { ...remoteButcher, ...localButcher }
+    mergedRestaurant = { ...localRestaurant, ...remoteRestaurant }
+  } else if (localRole === "restaurant") {
+    mergedButcher = { ...localButcher, ...remoteButcher }
+    mergedRestaurant = { ...remoteRestaurant, ...localRestaurant }
+  } else {
+    mergedButcher = { ...localButcher, ...remoteButcher }
+    mergedRestaurant = { ...localRestaurant, ...remoteRestaurant }
+  }
+
+  return {
+    butcher: mergedButcher,
+    restaurant: mergedRestaurant,
+  }
+}
+
+export function mergeTransfers(
+  local: Transfer[],
+  remote: Transfer[],
+): Transfer[] {
+  const map = new Map<string, Transfer>()
+  local.forEach((t) => {
+    if (t && t.id) map.set(t.id, t)
+  })
+  remote.forEach((r) => {
+    if (!r || !r.id) return
+    const l = map.get(r.id)
+    if (!l) {
+      map.set(r.id, r)
+      return
+    }
+    const lTerminal = l.status !== "Sent"
+    const rTerminal = r.status !== "Sent"
+    if (lTerminal && !rTerminal) {
+      map.set(r.id, {
+        ...r,
+        status: l.status,
+        received_at: l.received_at ?? r.received_at,
+        updated_at: l.updated_at,
+      })
+    } else if (!lTerminal && rTerminal) {
+      map.set(r.id, r)
+    } else {
+      const lTime = new Date(l.updated_at || l.created_at || 0).getTime()
+      const rTime = new Date(r.updated_at || r.created_at || 0).getTime()
+      map.set(r.id, rTime >= lTime ? r : l)
+    }
+  })
+  return Array.from(map.values())
+}
+
+export function mergeTransferLines(
+  local: TransferLine[],
+  remote: TransferLine[],
+): TransferLine[] {
+  const map = new Map<string, TransferLine>()
+  local.forEach((l) => {
+    if (l && l.id) map.set(l.id, l)
+  })
+  remote.forEach((r) => {
+    if (!r || !r.id) return
+    const l = map.get(r.id)
+    if (!l) {
+      map.set(r.id, r)
+      return
+    }
+    if (l.quantity_received !== null && r.quantity_received === null) {
+      map.set(r.id, l)
+    } else if (r.quantity_received !== null && l.quantity_received === null) {
+      map.set(r.id, r)
+    } else {
+      const lTime = new Date(l.updated_at || l.created_at || 0).getTime()
+      const rTime = new Date(r.updated_at || r.created_at || 0).getTime()
+      map.set(r.id, rTime >= lTime ? r : l)
+    }
+  })
+  return Array.from(map.values())
+}
+
+export function mergeStockLedger(
+  local: StockMovement[],
+  remote: StockMovement[],
+): StockMovement[] {
+  const map = new Map<string, StockMovement>()
+  local.forEach((m) => {
+    if (m && m.id) map.set(m.id, m)
+  })
+  remote.forEach((m) => {
+    if (m && m.id) map.set(m.id, m)
+  })
+  return Array.from(map.values()).sort(
+    (a, b) =>
+      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+  )
+}
+
+export function mergeRolePins(
+  local: RolePins,
+  remote: RolePins,
+  localRole: DeviceRole | null,
+): RolePins {
+  if (localRole === "butcher" || localRole === "restaurant") {
+    return {
+      butcher: /^\d{4}$/.test(remote.butcher) ? remote.butcher : local.butcher,
+      restaurant: /^\d{4}$/.test(remote.restaurant) ? remote.restaurant : local.restaurant,
+    }
+  }
+  const remoteButcherSet = remote.butcher && remote.butcher !== "0000"
+  const remoteRestSet = remote.restaurant && remote.restaurant !== "0000"
+  return {
+    butcher:
+      local.butcher && local.butcher !== "0000"
+        ? local.butcher
+        : remoteButcherSet ? remote.butcher : local.butcher,
+    restaurant:
+      local.restaurant && local.restaurant !== "0000"
+        ? local.restaurant
+        : remoteRestSet ? remote.restaurant : local.restaurant,
+  }
+}
+
 function itemCount(entries: StorageEntries) {
   return parseJson<unknown[]>(entries[KEYS.items] ?? "", []).length
 }
@@ -411,33 +546,119 @@ class InventoryDataService {
       await this.migrateAndSeed()
     }
     const localEntries = inventoryStorage.snapshot(INVENTORY_CLOUD_KEYS)
-    const remoteEntries = await supabaseInventorySync.initialize(localEntries)
-    if (remoteEntries) {
-      await inventoryStorage.applyRemote(
-        chooseInitialCloudEntries(localEntries, remoteEntries),
-      )
-      await this.migrateAndSeed()
+    const remoteEntries = await firebaseInventorySync.initialize(localEntries)
+    if (remoteEntries && Object.keys(remoteEntries).length > 0) {
+      await this.mergeAndApplyRemoteEntries(remoteEntries)
     }
     inventoryStorage.setMutationListener((entries) => {
-      supabaseInventorySync.queue(entries)
+      firebaseInventorySync.queue(entries)
     })
-    if (remoteEntries) {
-      supabaseInventorySync.queue(
-        inventoryStorage.snapshot(INVENTORY_CLOUD_KEYS),
-      )
+    firebaseInventorySync.setRemoteUpdateListener(async (entries) => {
+      await this.mergeAndApplyRemoteEntries(entries)
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("smart-inventory-data-refreshed"))
+      }
+    })
+    const activeRole = this.getCachedDeviceRole()
+    if (activeRole) {
+      firebaseInventorySync.setCurrentRole(activeRole)
     }
     this.initialized = true
   }
 
   async refreshFromCloud() {
-    const remoteEntries = await supabaseInventorySync.pull()
-    if (!remoteEntries) return false
-    const localEntries = inventoryStorage.snapshot(INVENTORY_CLOUD_KEYS)
-    await inventoryStorage.applyRemote(
-      chooseInitialCloudEntries(localEntries, remoteEntries),
-    )
-    await this.migrateAndSeed()
+    const remoteEntries = await firebaseInventorySync.pull()
+    if (!remoteEntries || !Object.keys(remoteEntries).length) return false
+    await this.mergeAndApplyRemoteEntries(remoteEntries)
     return true
+  }
+
+  async mergeAndApplyRemoteEntries(remoteEntries: StorageEntries) {
+    const role = this.getCachedDeviceRole()
+    const merged: StorageEntries = {}
+
+    for (const [key, remoteRaw] of Object.entries(remoteEntries)) {
+      if (remoteRaw === null) {
+        merged[key] = null
+        continue
+      }
+
+      if (key === KEYS.locationWeights) {
+        const localWeights = parseRecord<Record<string, number | null>>(
+          inventoryStorage.getCached(KEYS.locationWeights),
+        )
+        const remoteWeights = parseRecord<Record<string, number | null>>(remoteRaw)
+        const mergedWeights = mergeLocationWeights(
+          {
+            butcher: localWeights.butcher ?? {},
+            restaurant: localWeights.restaurant ?? {},
+          },
+          {
+            butcher: remoteWeights.butcher ?? {},
+            restaurant: remoteWeights.restaurant ?? {},
+          },
+          role,
+        )
+        merged[key] = JSON.stringify(mergedWeights)
+        const activeLocation = role === "restaurant" ? "restaurant" : "butcher"
+        merged[KEYS.weights] = JSON.stringify(mergedWeights[activeLocation] ?? {})
+      } else if (key === KEYS.transfers) {
+        const localTransfers = parseArray<Transfer>(
+          inventoryStorage.getCached(KEYS.transfers),
+        )
+        const remoteTransfers = parseArray<Transfer>(remoteRaw)
+        const mergedTransfers = mergeTransfers(localTransfers, remoteTransfers)
+        merged[key] = JSON.stringify(mergedTransfers)
+      } else if (key === KEYS.transferLines) {
+        const localLines = parseArray<TransferLine>(
+          inventoryStorage.getCached(KEYS.transferLines),
+        )
+        const remoteLines = parseArray<TransferLine>(remoteRaw)
+        const mergedLines = mergeTransferLines(localLines, remoteLines)
+        merged[key] = JSON.stringify(mergedLines)
+      } else if (key === KEYS.ledger) {
+        const localLedger = parseArray<StockMovement>(
+          inventoryStorage.getCached(KEYS.ledger),
+        )
+        const remoteLedger = parseArray<StockMovement>(remoteRaw)
+        const mergedLedger = mergeStockLedger(localLedger, remoteLedger)
+        merged[key] = JSON.stringify(mergedLedger)
+      } else if (key === KEYS.rolePins) {
+        const localPins = parseRecord<string>(
+          inventoryStorage.getCached(KEYS.rolePins),
+        )
+        const remotePins = parseRecord<string>(remoteRaw)
+        const mergedPins = mergeRolePins(
+          {
+            butcher: localPins.butcher || "0000",
+            restaurant: localPins.restaurant || "0000",
+          },
+          {
+            butcher: remotePins.butcher || "0000",
+            restaurant: remotePins.restaurant || "0000",
+          },
+          role,
+        )
+        merged[key] = JSON.stringify(mergedPins)
+      } else if (key === KEYS.items) {
+        const localItems = parseArray<Item>(inventoryStorage.getCached(KEYS.items))
+        const remoteItems = parseArray<Item>(remoteRaw)
+        if (remoteItems.length > 0 || localItems.length === 0) {
+          merged[key] = remoteRaw
+        }
+      } else if (key === KEYS.categories) {
+        const remoteCats = parseArray<Category>(remoteRaw)
+        if (remoteCats.length > 0) {
+          merged[key] = remoteRaw
+        }
+      } else {
+        merged[key] = remoteRaw
+      }
+    }
+
+    if (Object.keys(merged).length > 0) {
+      await inventoryStorage.applyRemote(merged)
+    }
   }
 
   private async migrateAndSeed() {
@@ -871,8 +1092,35 @@ class InventoryDataService {
     )
   }
 
-  async setDeviceRole(role: DeviceRole) {
+  getCachedDeviceRole(): DeviceRole | null {
+    const raw = inventoryStorage.getCached(KEYS.deviceRole)
+    return raw === "owner" || raw === "butcher" || raw === "restaurant"
+      ? (raw as DeviceRole)
+      : null
+  }
+
+  async setDeviceRole(role: DeviceRole | null) {
+    if (role === null) {
+      await this.removeRawValue(KEYS.deviceRole)
+      firebaseInventorySync.setCurrentRole(null)
+      return
+    }
     await this.setRawValue(KEYS.deviceRole, role)
+    firebaseInventorySync.setCurrentRole(role)
+  }
+
+  async switchBranch(branchId: string) {
+    const remoteEntries = await firebaseInventorySync.switchBranch(branchId)
+    if (remoteEntries && Object.keys(remoteEntries).length > 0) {
+      await inventoryStorage.applyRemote(remoteEntries)
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("smart-inventory-data-refreshed"))
+    }
+  }
+
+  async sendSyncPing(role: DeviceRole) {
+    return firebaseInventorySync.sendPing(role)
   }
 
   async replaceRecipeComponents(
@@ -1011,6 +1259,7 @@ class InventoryDataService {
           ...locationWeights,
           [location]: nextWeights,
         }),
+        [KEYS.weights]: JSON.stringify(nextWeights),
         [KEYS.ledger]: JSON.stringify(nextLedger),
       })
       return {
@@ -1044,6 +1293,7 @@ class InventoryDataService {
         ...locationWeights,
         [location]: result.weights,
       }),
+      [KEYS.weights]: JSON.stringify(result.weights),
       [KEYS.ledger]: JSON.stringify(result.ledger),
     })
     return {
@@ -1124,6 +1374,7 @@ class InventoryDataService {
       [KEYS.locationWeights]: JSON.stringify(nextLocationWeights),
       [KEYS.ledger]: JSON.stringify(ledger),
     })
+    void firebaseInventorySync.sendPing("butcher")
     return {
       transfer,
       transfers,
@@ -1224,6 +1475,7 @@ class InventoryDataService {
       [KEYS.locationWeights]: JSON.stringify(nextLocationWeights),
       [KEYS.ledger]: JSON.stringify(ledger),
     })
+    void firebaseInventorySync.sendPing("restaurant")
     return {
       transfers: nextTransfers,
       transferLines: nextLines,
@@ -1289,6 +1541,7 @@ class InventoryDataService {
       [KEYS.locationWeights]: JSON.stringify(nextLocationWeights),
       [KEYS.ledger]: JSON.stringify(ledger),
     })
+    void firebaseInventorySync.sendPing("butcher")
     return {
       transfers: nextTransfers,
       locationWeights: nextLocationWeights,
@@ -1440,6 +1693,27 @@ class InventoryDataService {
     }
   }
 
+  async getRolePins(): Promise<RolePins> {
+    const stored = parseRecord<unknown>(
+      inventoryStorage.getCached(KEYS.rolePins),
+    )
+    return {
+      butcher:
+        typeof stored.butcher === "string" && /^\d{4}$/.test(stored.butcher)
+          ? stored.butcher
+          : "0000",
+      restaurant:
+        typeof stored.restaurant === "string" &&
+        /^\d{4}$/.test(stored.restaurant)
+          ? stored.restaurant
+          : "0000",
+    }
+  }
+
+  async getOwnerPin(): Promise<string> {
+    return inventoryStorage.getCached(KEYS.ownerPin, "0000")
+  }
+
   async setRolePins(rolePins: RolePins) {
     const normalized: RolePins = {
       butcher: /^\d{4}$/.test(rolePins.butcher) ? rolePins.butcher : "0000",
@@ -1448,6 +1722,8 @@ class InventoryDataService {
         : "0000",
     }
     await this.setRawValue(KEYS.rolePins, JSON.stringify(normalized))
+    await firebaseInventorySync.flush()
+    void firebaseInventorySync.sendPing("owner")
     return normalized
   }
 
@@ -1476,7 +1752,7 @@ class InventoryDataService {
 
   async flush() {
     await inventoryStorage.flush()
-    await supabaseInventorySync.flush()
+    await firebaseInventorySync.flush()
   }
 
   async clearInventoryData() {

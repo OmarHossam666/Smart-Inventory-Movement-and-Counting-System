@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "503531896590",
+    "project_id": "smart-inventory-sys",
+    "storage_bucket": "smart-inventory-sys.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:503531896590:android:561425b9bd0a8e8d3a615f",
+        "android_client_info": {
+          "package_name": "com.smartinventory.restaurant"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA-QgH9gRpy9Xro6NEy6EQJLjy7BdxrrJ8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+

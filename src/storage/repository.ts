@@ -28,7 +28,6 @@ export type InventoryStorageKey = typeof INVENTORY_STORAGE_KEYS[number]
 export type StorageEntries = Record<string, string | null>
 
 export const INVENTORY_CLOUD_KEYS = [
-  "smart-inventory-weights",
   "smart-inventory-movements",
   "smart-inventory-stock-ledger",
   "smart-inventory-recipe-components",

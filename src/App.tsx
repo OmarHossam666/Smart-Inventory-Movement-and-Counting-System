@@ -38,6 +38,11 @@ import {
 } from "./MascotCompanion"
 import type { ScaleStatus } from "./ScaleConnection"
 import logoMark from "./assets/smart-scale-logo.png"
+import { storeAuthService } from "./data/firebase/authService"
+import {
+  firebaseInventorySync,
+  type PresenceMap,
+} from "./data/firebaseInventorySync"
 import {
   inventoryDataService,
   type InventoryBootstrap,
@@ -126,6 +131,12 @@ const DataBackupScreen = lazy(() =>
 const PdfReportScreen = lazy(() =>
   import("./PdfReport").then((module) => ({
     default: module.PdfReportScreen,
+  })),
+)
+
+const DeviceConnectModal = lazy(() =>
+  import("./DeviceConnectModal").then((module) => ({
+    default: module.DeviceConnectModal,
   })),
 )
 
@@ -399,6 +410,7 @@ export default function App({
   const [pdfRecord, setPdfRecord] = useState<AuditRecord | null>(null)
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [scaleScreenOpen, setScaleScreenOpen] = useState(false)
+  const [deviceConnectOpen, setDeviceConnectOpen] = useState(false)
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>("disconnected")
   const [scaleWeight, setScaleWeight] = useState(0)
   const [scaleLastReadAt, setScaleLastReadAt] = useState(Date.now())
@@ -420,6 +432,48 @@ export default function App({
   const [draftPhone, setDraftPhone] = useState("")
   const [resetConfirm, setResetConfirm] = useState(false)
   const [weightFlash, setWeightFlash] = useState(false)
+  const [livePingAlert, setLivePingAlert] = useState<{
+    role: string
+    time: number
+  } | null>(null)
+  const [isPingPulsing, setIsPingPulsing] = useState(false)
+  const [presenceMap, setPresenceMap] = useState<PresenceMap>(() =>
+    firebaseInventorySync.getPresence(),
+  )
+
+  useEffect(() => {
+    return firebaseInventorySync.subscribePresence((p) => {
+      setPresenceMap(p)
+    })
+  }, [])
+
+  useEffect(() => {
+    const handlePing = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        role: string
+        time: number
+      }>
+      if (customEvent.detail) {
+        setLivePingAlert(customEvent.detail)
+        setIsPingPulsing(true)
+        navigator.vibrate?.([100, 50, 100])
+        setTimeout(() => setIsPingPulsing(false), 8000)
+        setTimeout(() => setLivePingAlert(null), 7000)
+      }
+    }
+    window.addEventListener("smart-inventory-ping-received", handlePing)
+    return () => {
+      window.removeEventListener("smart-inventory-ping-received", handlePing)
+    }
+  }, [])
+
+  const onlineDevicesCount = useMemo(() => {
+    const roles: DeviceRole[] = ["butcher", "restaurant", "owner"]
+    return roles.filter(
+      (r) => r === deviceRole || presenceMap[r]?.online,
+    ).length
+  }, [deviceRole, presenceMap])
+
   const [mascotEvent, setMascotEvent] = useState<{
     state: MascotState
     message: string
@@ -440,6 +494,25 @@ export default function App({
   const cloudRefreshRunning = useRef(false)
 
   useEffect(() => {
+    const applyFreshBootstrap = async () => {
+      const next = await inventoryDataService.getBootstrap()
+      setCategoryCatalog(next.categories)
+      setProductCatalog(next.items)
+      setProductConfig(next.config)
+      setInventoryFlows(next.movements)
+      setRecipeComponents(next.recipeComponents)
+      setStockLedger(next.stockLedger)
+      setLocationWeights(next.locationWeights)
+      setWeights(next.locationWeights[activeLocation])
+      setTransfers(next.transfers)
+      setTransferLines(next.transferLines)
+      setAuditHistory(next.auditHistory)
+      setShiftInfo(next.shift)
+      setRolePins(next.rolePins)
+      setOwnerPin(next.ownerPin)
+      setOwnerPhone(next.ownerPhone)
+    }
+
     const refreshCloudData = async () => {
       if (
         cloudRefreshRunning.current ||
@@ -452,20 +525,7 @@ export default function App({
       try {
         const changed = await inventoryDataService.refreshFromCloud()
         if (!changed) return
-        const next = await inventoryDataService.getBootstrap()
-        setCategoryCatalog(next.categories)
-        setProductCatalog(next.items)
-        setProductConfig(next.config)
-        setInventoryFlows(next.movements)
-        setRecipeComponents(next.recipeComponents)
-        setStockLedger(next.stockLedger)
-        setLocationWeights(next.locationWeights)
-        setWeights(next.locationWeights[activeLocation])
-        setTransfers(next.transfers)
-        setTransferLines(next.transferLines)
-        setAuditHistory(next.auditHistory)
-        setShiftInfo(next.shift)
-        setRolePins(next.rolePins)
+        await applyFreshBootstrap()
       } finally {
         cloudRefreshRunning.current = false
       }
@@ -473,12 +533,18 @@ export default function App({
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refreshCloudData()
     }
-    const timer = window.setInterval(() => void refreshCloudData(), 15_000)
     window.addEventListener("online", refreshCloudData)
+    window.addEventListener(
+      "smart-inventory-data-refreshed",
+      applyFreshBootstrap,
+    )
     document.addEventListener("visibilitychange", refreshWhenVisible)
     return () => {
-      window.clearInterval(timer)
       window.removeEventListener("online", refreshCloudData)
+      window.removeEventListener(
+        "smart-inventory-data-refreshed",
+        applyFreshBootstrap,
+      )
       document.removeEventListener("visibilitychange", refreshWhenVisible)
     }
   }, [activeLocation])
@@ -557,39 +623,39 @@ export default function App({
   const quickCountPresets: Array<[string, string, number]> =
     selected.unit === "kg"
       ? [
-          ["+10", "كجم", 10],
-          ["+5", "كجم", 5],
-          ["+1", "كجم", 1],
-          ["+500", "جرام", 0.5],
-          ["+250", "جرام", 0.25],
-          ["+100", "جرام", 0.1],
-        ]
+        ["+10", "كجم", 10],
+        ["+5", "كجم", 5],
+        ["+1", "كجم", 1],
+        ["+500", "جرام", 0.5],
+        ["+250", "جرام", 0.25],
+        ["+100", "جرام", 0.1],
+      ]
       : selected.unit === "g"
         ? [
-            ["+1000", "جرام", 1000],
-            ["+500", "جرام", 500],
-            ["+250", "جرام", 250],
-            ["+100", "جرام", 100],
-            ["+50", "جرام", 50],
-            ["+10", "جرام", 10],
-          ]
+          ["+1000", "جرام", 1000],
+          ["+500", "جرام", 500],
+          ["+250", "جرام", 250],
+          ["+100", "جرام", 100],
+          ["+50", "جرام", 50],
+          ["+10", "جرام", 10],
+        ]
         : selected.unit === "ml"
           ? [
-              ["+1000", "مل", 1000],
-              ["+500", "مل", 500],
-              ["+250", "مل", 250],
-              ["+100", "مل", 100],
-              ["+50", "مل", 50],
-              ["+10", "مل", 10],
-            ]
+            ["+1000", "مل", 1000],
+            ["+500", "مل", 500],
+            ["+250", "مل", 250],
+            ["+100", "مل", 100],
+            ["+50", "مل", 50],
+            ["+10", "مل", 10],
+          ]
           : [
-              ["+20", unitName(selected), 20],
-              ["+10", unitName(selected), 10],
-              ["+5", unitName(selected), 5],
-              ["+3", unitName(selected), 3],
-              ["+2", unitName(selected), 2],
-              ["+1", unitName(selected), 1],
-            ]
+            ["+20", unitName(selected), 20],
+            ["+10", unitName(selected), 10],
+            ["+5", unitName(selected), 5],
+            ["+3", unitName(selected), 3],
+            ["+2", unitName(selected), 2],
+            ["+1", unitName(selected), 1],
+          ]
   const countCorrection =
     selected.unit === "kg"
       ? { amount: -0.1, label: "-100 جرام" }
@@ -626,7 +692,7 @@ export default function App({
               movement.type === "count" &&
               movement.item_id === item.id &&
               movement.reference_id ===
-                `current-count:${activeLocation}:${item.id}`,
+              `current-count:${activeLocation}:${item.id}`,
           )
         if (!parent) {
           result[item.id] = []
@@ -793,9 +859,8 @@ export default function App({
     if (auditScreen !== "closed" && auditData.shortage.length > 0) {
       return {
         state: "shortage",
-        message: `وجدت ${auditData.shortage.length} ${
-          auditData.shortage.length === 1 ? "صنفاً يحتاج" : "أصناف تحتاج"
-        } مراجعة بعد احتساب الهدر المسموح.`,
+        message: `وجدت ${auditData.shortage.length} ${auditData.shortage.length === 1 ? "صنفاً يحتاج" : "أصناف تحتاج"
+          } مراجعة بعد احتساب الهدر المسموح.`,
       }
     }
     if (pdfRecord) {
@@ -871,16 +936,14 @@ export default function App({
           const unit = unitName(product)
           const note = movement.notes ? ` · ${movement.notes}` : ""
           return [
-            `• ${product.name_ar}${
-              product.name_en ? ` (${product.name_en})` : ""
+            `• ${product.name_ar}${product.name_en ? ` (${product.name_en})` : ""
             }`,
             `أول: ${movement.opening.toFixed(2)}`,
             `وارد: ${movement.incoming.toFixed(2)}`,
             `صادر: ${movement.outgoing.toFixed(2)}`,
             `متوقع: ${expectedBalance(movement).toFixed(2)}`,
             `فعلي: ${actual === null ? "—" : actual.toFixed(2)}`,
-            `فرق: ${
-              difference === null ? "—" : difference.toFixed(2)
+            `فرق: ${difference === null ? "—" : difference.toFixed(2)
             } ${unit}${note}`,
           ].join(" | ")
         }),
@@ -893,8 +956,7 @@ export default function App({
         `\n*استهلاك مكونات ${product.name_ar}*`,
         ...deductions.map(
           (deduction) =>
-            `• ${deduction.name}: ${deduction.quantity} ${baseUnitName(deduction.unit)}${
-              deduction.negativeStock ? " · تنبيه رصيد سالب" : ""
+            `• ${deduction.name}: ${deduction.quantity} ${baseUnitName(deduction.unit)}${deduction.negativeStock ? " · تنبيه رصيد سالب" : ""
             }`,
         ),
       ]
@@ -933,8 +995,8 @@ export default function App({
       category.value === "all"
         ? configuredProducts[0]
         : configuredProducts.find(
-            (product) => product.category_id === category.value,
-          )
+          (product) => product.category_id === category.value,
+        )
     if (firstProduct) setSelectedId(firstProduct.id)
   }
 
@@ -1548,9 +1610,8 @@ export default function App({
       created_at: timestamp,
       updated_at: timestamp,
       created_at_ms: createdAt,
-      shift: `${shiftInfo.label} · ${shiftInfo.branch} · ${
-        activeLocation === "butcher" ? "الملحمة" : "المطعم"
-      }`,
+      shift: `${shiftInfo.label} · ${shiftInfo.branch} · ${activeLocation === "butcher" ? "الملحمة" : "المطعم"
+        }`,
       completed: summaryData.completed,
       total: configuredProducts.length,
       book: summaryData.book,
@@ -1600,7 +1661,7 @@ export default function App({
               movement.type === "count" &&
               movement.item_id === product.id &&
               movement.reference_id ===
-                `current-count:${activeLocation}:${product.id}`,
+              `current-count:${activeLocation}:${product.id}`,
           )
         if (!parent) return []
         return stockLedger
@@ -1648,15 +1709,13 @@ export default function App({
           const actual = locationWeights[location][product.id] ?? null
           return {
             item_id: product.id,
-            name: `${product.name_ar} · ${
-              location === "butcher" ? "الملحمة" : "المطعم"
-            }`,
+            name: `${product.name_ar} · ${location === "butcher" ? "الملحمة" : "المطعم"
+              }`,
             category_id: product.category_id,
-            category: `${
-              categoryCatalog.find(
-                (category) => category.id === product.category_id,
-              )?.name_ar ?? "المخزون"
-            } · ${location === "butcher" ? "الملحمة" : "المطعم"}`,
+            category: `${categoryCatalog.find(
+              (category) => category.id === product.category_id,
+            )?.name_ar ?? "المخزون"
+              } · ${location === "butcher" ? "الملحمة" : "المطعم"}`,
             unit: unitName(product),
             opening: product.opening_quantity,
             incoming: 0,
@@ -1685,8 +1744,7 @@ export default function App({
       ]),
       "",
       `التحويلات: ${transfers.length}`,
-      `فروقات الاستلام: ${
-        transfers.filter((transfer) => transfer.status === "Discrepancy").length
+      `فروقات الاستلام: ${transfers.filter((transfer) => transfer.status === "Discrepancy").length
       }`,
     ]
     const record: AuditRecord = {
@@ -1921,8 +1979,8 @@ export default function App({
     const exists = productCatalog.some((item) => item.id === product.id)
     const nextCatalog = exists
       ? productCatalog.map((item) =>
-          item.id === product.id ? normalized : item,
-        )
+        item.id === product.id ? normalized : item,
+      )
       : [...productCatalog, normalized]
     const nextConfig = {
       ...productConfig,
@@ -2081,10 +2139,10 @@ export default function App({
     const nextCatalog = productCatalog.map((product) =>
       product.id === id
         ? {
-            ...product,
-            active: product.active === false,
-            updated_at: entityTimestamp(),
-          }
+          ...product,
+          active: product.active === false,
+          updated_at: entityTimestamp(),
+        }
         : product,
     )
     setProductCatalog(nextCatalog)
@@ -2230,21 +2288,110 @@ export default function App({
 
   if (!ownerSessionUnlocked) {
     return (
-      <OwnerSessionGate
-        role={deviceRole}
-        accessPin={deviceRole === "owner" ? ownerPin : rolePins[deviceRole]}
-        onUnlock={() => setOwnerSessionUnlocked(true)}
-      />
+      <>
+        <OwnerSessionGate
+          role={deviceRole}
+          accessPin={deviceRole === "owner" ? ownerPin : rolePins[deviceRole]}
+          onUnlock={() => setOwnerSessionUnlocked(true)}
+          onOpenDeviceConnect={() => setDeviceConnectOpen(true)}
+          branchId={storeAuthService.getBranchId()}
+        />
+        {deviceConnectOpen && (
+          <Suspense fallback={null}>
+            <DeviceConnectModal
+              isOpen={deviceConnectOpen}
+              onClose={() => setDeviceConnectOpen(false)}
+              currentRole={deviceRole}
+              onRoleChange={(role) => {
+                void chooseDeviceRole(role)
+                setDeviceConnectOpen(false)
+              }}
+              ownerPin={ownerPin}
+              rolePins={rolePins}
+              onOpenManageRolePins={() => {
+                setDeviceConnectOpen(false)
+                setOwnerScreen("rolePins")
+              }}
+            />
+          </Suspense>
+        )}
+      </>
     )
   }
 
   return (
     <main
       dir="rtl"
-      className={`${
-        isDark ? "dark" : ""
-      } min-h-screen bg-[#f1f5f9] text-slate-950 transition-colors dark:bg-[#0b0f19] dark:text-slate-50`}
+      className={`${isDark ? "dark" : ""
+        } min-h-screen bg-[#f1f5f9] text-slate-950 transition-colors dark:bg-[#0b0f19] dark:text-slate-50`}
     >
+      {livePingAlert && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed inset-x-3 top-3 z-[120] mx-auto flex max-w-[640px] items-center justify-between gap-3 rounded-2xl border-2 border-emerald-400 bg-emerald-600 p-3.5 text-white shadow-2xl animate-bounce"
+        >
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/20 text-[20px]">
+              🟢
+            </span>
+            <div>
+              <p className="text-[13px] font-bold">
+                إشارة اختبار حية ومباشرة مستلمة من:{" "}
+                {livePingAlert.role === "butcher"
+                  ? "جهاز الملحمة"
+                  : livePingAlert.role === "restaurant"
+                    ? "جهاز المطعم"
+                    : "جهاز المالك"}
+                !
+              </p>
+              <p className="text-[11px] text-emerald-100">
+                الأجهزة الثلاثة متصلة سحابياً بنجاح والمزامنة الفورية تعمل بكفاءة ✓
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLivePingAlert(null)}
+            className="touch-button shrink-0 rounded-xl bg-black/20 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-black/30"
+          >
+            إغلاق
+          </button>
+        </aside>
+      )}
+
+      {deviceRole === "restaurant" &&
+        transfers.some((t) => t.status === "Sent") && (
+          <aside
+            role="status"
+            aria-live="assertive"
+            className="fixed inset-x-3 top-3 z-[115] mx-auto flex max-w-[640px] items-center justify-between gap-3 rounded-2xl border-2 border-indigo-400 bg-indigo-600 p-3.5 text-white shadow-2xl animate-pulse"
+          >
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/20 text-[20px]">
+                🥩
+              </span>
+              <div>
+                <p className="text-[13px] font-bold">
+                  تحويل لحوم وارد من الملحمة! (
+                  {transfers.filter((t) => t.status === "Sent").length} تحويل
+                  بانتظار الاستلام)
+                </p>
+                <p className="text-[11px] text-indigo-100">
+                  اضغط لتأكيد الاستلام وإضافته مباشرة إلى مخزون المطعم ✓
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTransferScreen("incoming")}
+              className="touch-button shrink-0 rounded-xl bg-white px-4 py-2 text-[12px] font-bold text-indigo-700 shadow-md hover:bg-indigo-50"
+            >
+              استلام الآن
+            </button>
+          </aside>
+        )}
+
       {storageWarning && (
         <div
           role="alert"
@@ -2311,13 +2458,12 @@ export default function App({
                     <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-70" />
                   )}
                   <span
-                    className={`relative inline-flex size-2.5 rounded-full border-2 border-slate-950 ${
-                      scaleStatus === "connected"
-                        ? "bg-emerald-400"
-                        : scaleStatus === "searching"
-                          ? "animate-pulse bg-indigo-400"
-                          : "bg-slate-500"
-                    }`}
+                    className={`relative inline-flex size-2.5 rounded-full border-2 border-slate-950 ${scaleStatus === "connected"
+                      ? "bg-emerald-400"
+                      : scaleStatus === "searching"
+                        ? "animate-pulse bg-indigo-400"
+                        : "bg-slate-500"
+                      }`}
                   />
                 </span>
               </span>
@@ -2433,7 +2579,7 @@ export default function App({
         </header>
 
         <section className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-[18px] border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-[#111827]">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-xl bg-slate-950 px-3 py-2 text-[11px] font-bold text-white">
               {deviceRole === "owner"
                 ? "المالك"
@@ -2444,6 +2590,39 @@ export default function App({
             <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
               مخزون {activeLocation === "butcher" ? "الملحمة" : "المطعم"}
             </span>
+            <button
+              type="button"
+              onClick={() => setDeviceConnectOpen(true)}
+              title="عرض حالة اتصال الأجهزة الثلاثة وتغيير دور الجهاز أو اختبار المزامنة"
+              className={`touch-button flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold shadow-sm transition-all active:scale-95 ${isPingPulsing
+                ? "border-emerald-500 bg-emerald-500 text-white ring-4 ring-emerald-300 dark:ring-emerald-700 animate-pulse"
+                : onlineDevicesCount === 3
+                  ? "border-teal-300 bg-teal-50 text-teal-900 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950/70 dark:text-teal-200"
+                  : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/70 dark:text-amber-200"
+                }`}
+            >
+              <span className="relative flex size-2.5">
+                <span
+                  className={`absolute inline-flex size-full animate-ping rounded-full opacity-75 ${isPingPulsing || onlineDevicesCount === 3
+                    ? "bg-emerald-400"
+                    : "bg-amber-400"
+                    }`}
+                />
+                <span
+                  className={`relative inline-flex size-2.5 rounded-full ${isPingPulsing || onlineDevicesCount === 3
+                    ? "bg-emerald-500"
+                    : "bg-amber-500"
+                    }`}
+                />
+              </span>
+              <span>
+                {isPingPulsing
+                  ? "🟢 إشارة حية مستلمة!"
+                  : `مركز الأجهزة (${onlineDevicesCount}/3 متصل)`}
+                {" · "}
+                {storeAuthService.getBranchId()}
+              </span>
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {deviceRole === "owner" && (
@@ -2453,11 +2632,10 @@ export default function App({
                     key={location}
                     type="button"
                     onClick={() => changeOwnerLocation(location)}
-                    className={`touch-button min-h-10 rounded-xl px-3 text-[10px] font-bold ${
-                      activeLocation === location
-                        ? "bg-indigo-600 text-white"
-                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                    }`}
+                    className={`touch-button min-h-10 rounded-xl px-3 text-[10px] font-bold ${activeLocation === location
+                      ? "bg-indigo-600 text-white"
+                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
                   >
                     {location === "butcher" ? "الملحمة" : "المطعم"}
                   </button>
@@ -2510,18 +2688,16 @@ export default function App({
                     role="tab"
                     aria-selected={activeCategory === index}
                     onClick={() => changeCategory(index)}
-                    className={`touch-button flex min-h-14 items-center justify-center gap-2 rounded-2xl border px-2 text-[13px] font-bold transition ${
-                      activeCategory === index
-                        ? "border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-900/15 dark:border-emerald-400 dark:bg-emerald-950"
-                        : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-500"
-                    }`}
+                    className={`touch-button flex min-h-14 items-center justify-center gap-2 rounded-2xl border px-2 text-[13px] font-bold transition ${activeCategory === index
+                      ? "border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-900/15 dark:border-emerald-400 dark:bg-emerald-950"
+                      : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-500"
+                      }`}
                   >
                     <Icon
-                      className={`size-5 ${
-                        activeCategory === index
-                          ? "text-emerald-400"
-                          : "text-slate-400"
-                      }`}
+                      className={`size-5 ${activeCategory === index
+                        ? "text-emerald-400"
+                        : "text-slate-400"
+                        }`}
                     />
                     {label}
                   </button>
@@ -2626,18 +2802,16 @@ export default function App({
                 </div>
 
                 <div
-                  className={`flex flex-1 flex-col items-center ${
-                    voiceStage === "error" || voiceStage === "unsupported"
-                      ? "justify-start pt-3"
-                      : "justify-center"
-                  }`}
+                  className={`flex flex-1 flex-col items-center ${voiceStage === "error" || voiceStage === "unsupported"
+                    ? "justify-start pt-3"
+                    : "justify-center"
+                    }`}
                 >
                   <div
-                    className={`relative grid place-items-center ${
-                      voiceStage === "error" || voiceStage === "unsupported"
-                        ? "size-20"
-                        : "size-44"
-                    }`}
+                    className={`relative grid place-items-center ${voiceStage === "error" || voiceStage === "unsupported"
+                      ? "size-20"
+                      : "size-44"
+                      }`}
                   >
                     <div className="absolute inset-5 rounded-full bg-indigo-500/15 blur-2xl" />
                     <MascotVisual
@@ -2645,7 +2819,7 @@ export default function App({
                         voiceStage === "parsed"
                           ? "matched"
                           : voiceStage === "error" ||
-                              voiceStage === "unsupported"
+                            voiceStage === "unsupported"
                             ? "idle"
                             : "listening"
                       }
@@ -2654,20 +2828,18 @@ export default function App({
                           ? "المعلم ميزان يؤكد فهم الكمية"
                           : "المعلم ميزان يستمع للكمية"
                       }
-                      className={`relative ${
-                        voiceStage === "error" || voiceStage === "unsupported"
-                          ? "size-24"
-                          : "size-48"
-                      }`}
+                      className={`relative ${voiceStage === "error" || voiceStage === "unsupported"
+                        ? "size-24"
+                        : "size-48"
+                        }`}
                     />
                   </div>
 
                   <h3
-                    className={`font-display text-center font-bold ${
-                      voiceStage === "error" || voiceStage === "unsupported"
-                        ? "mt-1 text-[17px]"
-                        : "mt-2 text-[22px]"
-                    }`}
+                    className={`font-display text-center font-bold ${voiceStage === "error" || voiceStage === "unsupported"
+                      ? "mt-1 text-[17px]"
+                      : "mt-2 text-[22px]"
+                      }`}
                   >
                     {voiceStage === "requesting" && "اسمح باستخدام الميكروفون"}
                     {voiceStage === "listening" &&
@@ -2761,21 +2933,19 @@ export default function App({
                     </div>
                   ) : (
                     <div
-                      className={`mt-4 w-full rounded-2xl border px-4 py-3 text-center transition ${
-                        voiceStage === "parsed"
-                          ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/60"
-                          : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
-                      }`}
+                      className={`mt-4 w-full rounded-2xl border px-4 py-3 text-center transition ${voiceStage === "parsed"
+                        ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/60"
+                        : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+                        }`}
                     >
                       <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
                         الكمية المستخرجة من الصوت
                       </p>
                       <strong
-                        className={`mt-1 block text-[40px] font-bold leading-none tabular-nums ${
-                          voiceStage === "parsed"
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-slate-300 dark:text-slate-600"
-                        }`}
+                        className={`mt-1 block text-[40px] font-bold leading-none tabular-nums ${voiceStage === "parsed"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-slate-300 dark:text-slate-600"
+                          }`}
                       >
                         {voiceStage === "parsed" && parsedVoiceWeight !== null
                           ? parsedVoiceWeight.toFixed(2)
@@ -2792,22 +2962,20 @@ export default function App({
                       <button
                         type="button"
                         onClick={() => changeVoiceMode("replace")}
-                        className={`touch-button min-h-11 rounded-xl text-[12px] font-bold transition ${
-                          voiceMode === "replace"
-                            ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300"
-                            : "text-slate-500 dark:text-slate-400"
-                        }`}
+                        className={`touch-button min-h-11 rounded-xl text-[12px] font-bold transition ${voiceMode === "replace"
+                          ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300"
+                          : "text-slate-500 dark:text-slate-400"
+                          }`}
                       >
                         استبدال الكمية الحالية
                       </button>
                       <button
                         type="button"
                         onClick={() => changeVoiceMode("add")}
-                        className={`touch-button min-h-11 rounded-xl text-[12px] font-bold transition ${
-                          voiceMode === "add"
-                            ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300"
-                            : "text-slate-500 dark:text-slate-400"
-                        }`}
+                        className={`touch-button min-h-11 rounded-xl text-[12px] font-bold transition ${voiceMode === "add"
+                          ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300"
+                          : "text-slate-500 dark:text-slate-400"
+                          }`}
                       >
                         إضافة على الكمية
                       </button>
@@ -2998,11 +3166,10 @@ export default function App({
             )}
 
             <div
-              className={`my-2.5 flex items-center justify-between rounded-2xl bg-slate-950 px-4 py-2.5 text-white ring-1 ring-white/10 transition ${
-                weightFlash
-                  ? "ui-number-pop scale-[1.015] ring-2 ring-emerald-400"
-                  : ""
-              }`}
+              className={`my-2.5 flex items-center justify-between rounded-2xl bg-slate-950 px-4 py-2.5 text-white ring-1 ring-white/10 transition ${weightFlash
+                ? "ui-number-pop scale-[1.015] ring-2 ring-emerald-400"
+                : ""
+                }`}
             >
               <span className="text-[12px] font-semibold text-slate-400">
                 الرصيد الفعلي
@@ -3268,6 +3435,23 @@ export default function App({
         </Suspense>
       )}
 
+      {deviceConnectOpen && (
+        <Suspense fallback={null}>
+          <DeviceConnectModal
+            isOpen={deviceConnectOpen}
+            onClose={() => setDeviceConnectOpen(false)}
+            currentRole={deviceRole}
+            onRoleChange={(role) => void chooseDeviceRole(role)}
+            ownerPin={ownerPin}
+            rolePins={rolePins}
+            onOpenManageRolePins={() => {
+              setDeviceConnectOpen(false)
+              setOwnerScreen("rolePins")
+            }}
+          />
+        </Suspense>
+      )}
+
       {historyOpen && (
         <Suspense
           fallback={
@@ -3454,6 +3638,10 @@ export default function App({
               onManageProducts={openProductManager}
               onOpenAnalytics={() => setOwnerScreen("analytics")}
               onOpenBackup={() => setOwnerScreen("backup")}
+              onOpenDeviceConnect={() => {
+                setOwnerScreen("closed")
+                setDeviceConnectOpen(true)
+              }}
               onRoleChange={(role) => {
                 void chooseDeviceRole(role)
                 setOwnerScreen("closed")
@@ -3764,9 +3952,8 @@ function OwnerPinGate({
       role="dialog"
       aria-modal="true"
       aria-labelledby="pin-title"
-      className={`w-full max-w-[450px] rounded-[26px] border bg-white p-6 shadow-[0_30px_90px_rgba(15,23,42,0.4)] dark:bg-[#111827] ${
-        error ? "border-red-400" : "border-slate-200 dark:border-slate-700"
-      }`}
+      className={`w-full max-w-[450px] rounded-[26px] border bg-white p-6 shadow-[0_30px_90px_rgba(15,23,42,0.4)] dark:bg-[#111827] ${error ? "border-red-400" : "border-slate-200 dark:border-slate-700"
+        }`}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
@@ -3805,11 +3992,10 @@ function OwnerPinGate({
         {[0, 1, 2, 3].map((index) => (
           <span
             key={index}
-            className={`grid size-14 place-items-center rounded-2xl border-2 transition ${
-              index < pin.length
-                ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950"
-                : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
-            }`}
+            className={`grid size-14 place-items-center rounded-2xl border-2 transition ${index < pin.length
+              ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950"
+              : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+              }`}
           >
             {index < pin.length && (
               <span className="size-3 rounded-full bg-indigo-600" />
@@ -3818,15 +4004,12 @@ function OwnerPinGate({
         ))}
       </div>
       <p
-        className={`mt-2 min-h-5 text-center text-[12px] font-bold ${
-          error ? "text-red-600" : "text-slate-400"
-        }`}
+        className={`mt-2 min-h-5 text-center text-[12px] font-bold ${error ? "text-red-600" : "text-slate-400"
+          }`}
       >
         {error
           ? "الرمز غير صحيح، حاول مرة أخرى"
-          : isDefaultPin
-            ? "الرمز الأولي: 0000 — غيّره من إعدادات المالك"
-            : "أدخل رمز المالك المحفوظ على هذا الجهاز"}
+          : "أدخل رمز PIN للمتابعة"}
       </p>
 
       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -3981,11 +4164,10 @@ function ChangeOwnerPin({
         {[0, 1, 2, 3].map((index) => (
           <span
             key={index}
-            className={`grid size-14 place-items-center rounded-2xl border-2 transition ${
-              index < entry.length
-                ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950"
-                : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
-            }`}
+            className={`grid size-14 place-items-center rounded-2xl border-2 transition ${index < entry.length
+              ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950"
+              : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+              }`}
           >
             {index < entry.length && (
               <span className="size-3 rounded-full bg-indigo-600" />
@@ -4157,11 +4339,10 @@ function DispatchFallbackScreen({
         <header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <span
-              className={`grid size-14 place-items-center rounded-2xl ${
-                isOnline
-                  ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300"
-                  : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-              }`}
+              className={`grid size-14 place-items-center rounded-2xl ${isOnline
+                ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300"
+                : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                }`}
             >
               {isOnline ? (
                 <CheckIcon className="size-7" />
@@ -4171,11 +4352,10 @@ function DispatchFallbackScreen({
             </span>
             <div>
               <p
-                className={`text-[12px] font-bold ${
-                  isOnline
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-amber-700 dark:text-amber-300"
-                }`}
+                className={`text-[12px] font-bold ${isOnline
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-amber-700 dark:text-amber-300"
+                  }`}
               >
                 {isOnline ? "التقرير جاهز للإرسال" : "لا يوجد اتصال بالإنترنت"}
               </p>
@@ -4200,11 +4380,10 @@ function DispatchFallbackScreen({
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-3 sm:p-5 md:grid-cols-[minmax(0,1fr)_290px] md:gap-5">
           <div className="flex min-h-0 flex-col">
             <div
-              className={`rounded-2xl border p-4 ${
-                isOnline
-                  ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40"
-                  : "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40"
-              }`}
+              className={`rounded-2xl border p-4 ${isOnline
+                ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40"
+                : "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40"
+                }`}
             >
               <h3 className="font-display text-[17px] font-bold">
                 {isOnline
@@ -4396,32 +4575,48 @@ function OwnerSessionGate({
   role,
   accessPin,
   onUnlock,
+  onOpenDeviceConnect,
+  branchId,
 }: {
   role: DeviceRole
   accessPin: string
   onUnlock: () => void
+  onOpenDeviceConnect: () => void
+  branchId: string
 }) {
   const [pin, setPin] = useState("")
   const [error, setError] = useState(false)
+  const roleName =
+    role === "owner" ? "المالك" : role === "butcher" ? "الملحمة" : "المطعم"
+
   return (
     <main
       dir="rtl"
-      className="grid min-h-screen place-items-center bg-[#f1f5f9] p-4 dark:bg-[#0b0f19]"
+      className="grid min-h-screen place-items-center bg-[#f1f5f9] p-4 text-slate-900 dark:bg-[#0b0f19] dark:text-white"
     >
-      <section className="w-full max-w-[430px] rounded-[28px] border border-slate-200 bg-white p-6 text-center shadow-2xl dark:border-slate-700 dark:bg-[#111827] dark:text-white">
-        <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300">
+      <section className="w-full max-w-[440px] rounded-[28px] border border-slate-200 bg-white p-6 text-center shadow-2xl dark:border-slate-700 dark:bg-[#111827]">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            سحابي: <code className="font-mono">{branchId}</code>
+          </span>
+          <button
+            type="button"
+            onClick={onOpenDeviceConnect}
+            className="text-[11px] font-bold text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            تغيير الفرع أو الدور ⚙️
+          </button>
+        </div>
+
+        <span className="mx-auto mt-4 grid size-16 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300">
           <LockIcon className="size-7" />
         </span>
-        <h1 className="font-display mt-4 text-[24px] font-bold">
-          دخول{" "}
-          {role === "owner"
-            ? "المالك"
-            : role === "butcher"
-              ? "الملحمة"
-              : "المطعم"}
+        <h1 className="font-display mt-3 text-[24px] font-bold">
+          دخول جهاز {roleName}
         </h1>
-        <p className="mt-2 text-[11px] font-medium text-slate-500">
-          أدخل رمز PIN المكون من 4 أرقام لفتح مساحة هذا الجهاز.
+        <p className="mt-1 text-[12px] font-medium text-slate-500 dark:text-slate-400">
+          أدخل رمز PIN لفتح مساحة هذا الجهاز.
         </p>
         <input
           autoFocus
@@ -4430,8 +4625,35 @@ function OwnerSessionGate({
           maxLength={4}
           value={pin}
           onChange={(event) => {
-            setPin(event.target.value.replace(/\D/g, "").slice(0, 4))
+            const next = event.target.value.replace(/\D/g, "").slice(0, 4)
+            setPin(next)
             setError(false)
+            if (next.length === 4) {
+              if (next === accessPin) {
+                onUnlock()
+              } else {
+                void Promise.all([
+                  inventoryDataService.getOwnerPin(),
+                  inventoryDataService.getRolePins(),
+                ])
+                  .then(([freshOwnerPin, freshRolePins]) => {
+                    const expected =
+                      role === "owner"
+                        ? freshOwnerPin
+                        : freshRolePins[role as "butcher" | "restaurant"]
+                    if (next === expected) {
+                      onUnlock()
+                    } else {
+                      setError(true)
+                      setPin("")
+                    }
+                  })
+                  .catch(() => {
+                    setError(true)
+                    setPin("")
+                  })
+              }
+            }
           }}
           onKeyDown={(event) => {
             if (event.key !== "Enter") return
@@ -4441,7 +4663,8 @@ function OwnerSessionGate({
               setPin("")
             }
           }}
-          className="mt-5 min-h-16 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-center text-[28px] font-bold tracking-[0.6em] outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900"
+          placeholder="••••"
+          className="mt-4 min-h-16 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-center text-[28px] font-bold tracking-[0.6em] outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900"
         />
         {error && (
           <p className="mt-2 text-[11px] font-bold text-red-600">
@@ -4460,8 +4683,19 @@ function OwnerSessionGate({
           }}
           className="touch-button mt-4 min-h-14 w-full rounded-2xl bg-indigo-600 text-[13px] font-bold text-white disabled:bg-slate-400"
         >
-          دخول النظام
+          دخول مساحة {roleName}
         </button>
+
+        <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={onOpenDeviceConnect}
+            className="touch-button flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-[12px] font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          >
+            <span>🔄</span>
+            <span>تغيير دور هذا الجهاز أو ربطه بأجهزة أخرى</span>
+          </button>
+        </div>
       </section>
     </main>
   )
@@ -4478,111 +4712,212 @@ function RoleSetup({
 }) {
   const [selectedRole, setSelectedRole] = useState<DeviceRole | null>(null)
   const [pin, setPin] = useState("")
+  const [branchId, setBranchId] = useState(() => storeAuthService.getBranchId())
+  const [liveRolePins, setLiveRolePins] = useState<RolePins>(rolePins)
+  const [liveOwnerPin, setLiveOwnerPin] = useState<string>(ownerPin)
   const [error, setError] = useState("")
+  const [isConnecting, setIsConnecting] = useState(false)
+
+  useEffect(() => {
+    setLiveRolePins(rolePins)
+  }, [rolePins])
+
+  useEffect(() => {
+    setLiveOwnerPin(ownerPin)
+  }, [ownerPin])
+
+  useEffect(() => {
+    const handleRefresh = async () => {
+      try {
+        const freshPins = await inventoryDataService.getRolePins()
+        const freshOwnerPin = await inventoryDataService.getOwnerPin()
+        setLiveRolePins(freshPins)
+        setLiveOwnerPin(freshOwnerPin)
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener("smart-inventory-data-refreshed", handleRefresh)
+    return () => {
+      window.removeEventListener("smart-inventory-data-refreshed", handleRefresh)
+    }
+  }, [])
+
   const choose = (role: DeviceRole) => {
     setError("")
     setPin("")
     setSelectedRole(role)
   }
-  const expectedPin =
-    selectedRole === "owner"
-      ? ownerPin
-      : selectedRole
-        ? rolePins[selectedRole]
-        : ""
+
   const roleLabel =
     selectedRole === "owner"
       ? "المالك"
       : selectedRole === "butcher"
         ? "الملحمة"
         : "المطعم"
-  const submitRole = () => {
+
+  const submitRole = async () => {
     if (!selectedRole) return
-    if (pin !== expectedPin) {
-      setError(`رمز ${roleLabel} غير صحيح.`)
-      setPin("")
-      return
+    setIsConnecting(true)
+    setError("")
+
+    try {
+      await inventoryDataService.switchBranch(branchId)
+      const freshPins = await inventoryDataService.getRolePins()
+      const freshOwnerPin = await inventoryDataService.getOwnerPin()
+      setLiveRolePins(freshPins)
+      setLiveOwnerPin(freshOwnerPin)
+
+      const expected =
+        selectedRole === "owner"
+          ? freshOwnerPin
+          : freshPins[selectedRole]
+
+      const fallbackExpected =
+        selectedRole === "owner"
+          ? (liveOwnerPin || ownerPin)
+          : (liveRolePins[selectedRole] || rolePins[selectedRole])
+
+      if (pin !== expected && pin !== fallbackExpected) {
+        setError(`رمز ${roleLabel} غير صحيح.`)
+        setPin("")
+        setIsConnecting(false)
+        return
+      }
+
+      await storeAuthService.ensureDeviceAuthenticated()
+      onChoose(selectedRole)
+    } catch (authError) {
+      console.warn("Device auth warning:", authError)
+      const fallbackExpected =
+        selectedRole === "owner"
+          ? (liveOwnerPin || ownerPin)
+          : (liveRolePins[selectedRole] || rolePins[selectedRole])
+
+      if (pin !== fallbackExpected) {
+        setError(`رمز ${roleLabel} غير صحيح.`)
+        setPin("")
+      } else {
+        onChoose(selectedRole)
+      }
+    } finally {
+      setIsConnecting(false)
     }
-    onChoose(selectedRole)
   }
   return (
     <main
       dir="rtl"
       className="grid min-h-screen place-items-center bg-[#f1f5f9] p-4 text-slate-950 dark:bg-[#0b0f19] dark:text-white"
     >
-      <section className="w-full max-w-[760px] rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_30px_90px_rgba(15,23,42,0.2)] dark:border-slate-700 dark:bg-[#111827] sm:p-8">
-        <div className="flex items-center gap-4">
-          <div className="grid size-16 place-items-center overflow-hidden rounded-2xl bg-slate-950">
-            <img src={logoMark} alt="" className="size-16 object-contain" />
+      <section className="w-full max-w-[780px] rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_30px_90px_rgba(15,23,42,0.2)] dark:border-slate-700 dark:bg-[#111827] sm:p-8">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
+          <div className="flex items-center gap-4">
+            <div className="grid size-14 place-items-center overflow-hidden rounded-2xl bg-slate-950">
+              <img src={logoMark} alt="" className="size-14 object-contain" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-emerald-600">
+                إعداد النظام وربط الأجهزة السحابية لأول مرة
+              </p>
+              <h1 className="font-display mt-0.5 text-[24px] font-extrabold">
+                حدد دور هذا الجهاز في المنشأة
+              </h1>
+            </div>
           </div>
-          <div>
-            <p className="text-[11px] font-bold text-emerald-600">
-              إعداد الجهاز لأول مرة
-            </p>
-            <h1 className="font-display mt-1 text-[26px] font-extrabold">
-              هذا الجهاز هو:
-            </h1>
-          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            سحابة Firebase جاهزة
+          </span>
         </div>
-        <p className="mt-4 text-[13px] font-medium leading-7 text-slate-500 dark:text-slate-400">
-          اختر موقع الجهاز. يمكن للمالك تغيير الدور لاحقاً من الإعدادات بعد إدخال
-          رمز PIN.
+
+        <p className="mt-4 text-[13px] font-medium leading-6 text-slate-600 dark:text-slate-300">
+          يعمل النظام بالتزامن الفوري عبر 3 أجهزة: جهاز الميزان بالملحمة، شاشة المطبخ بالمطعم، وجهاز المالك للإدارة والمراقبة.
         </p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+
+        <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50/70 p-4 dark:border-teal-900/60 dark:bg-teal-950/30">
+          <label className="block text-[12px] font-bold text-teal-900 dark:text-teal-200">
+            معرّف الفرع المشترك (Cloud Branch ID)
+            <span className="mt-0.5 block text-[11px] font-normal text-slate-600 dark:text-slate-400">
+              يجب أن يكون نفس المعرّف في أجهزة الملحمة والمطعم والمالك لتبادل البيانات فورياً.
+            </span>
+            <input
+              type="text"
+              value={branchId}
+              onChange={(event) =>
+                setBranchId(
+                  event.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+                )
+              }
+              placeholder="main_branch"
+              className="mt-2 min-h-11 w-full rounded-xl border border-teal-300 bg-white px-3 text-left font-mono text-[14px] font-bold text-teal-900 shadow-sm dark:border-teal-700 dark:bg-slate-900 dark:text-teal-200"
+              dir="ltr"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {([
-            ["butcher", "الملحمة", "الجرد والهدر والإرسال إلى المطعم"],
-            ["restaurant", "المطعم", "الجرد والوصفات واستلام التحويلات"],
-            ["owner", "المالك", "إدارة النظام والموقعين والتقارير"],
-          ] as const).map(([role, label, description]) => (
+            ["butcher", "جهاز الملحمة", "الميزان الذكي واللحوم", "وزن الذبائح واللحوم وإرسال التحويلات الفورية للمطعم", "🥩"],
+            ["restaurant", "جهاز المطعم", "شاشة المطبخ والاستلام", "استلام اللحوم الواردة من الملحمة بضغطة زر وجرد المطبخ", "🍔"],
+            ["owner", "جهاز المالك", "الإدارة والرقابة المركزية", "متابعة الملحمة والمطعم حياً، والتقارير وتعديل الأسعار", "🛡️"],
+          ] as const).map(([role, title, subtitle, description, icon]) => (
             <button
               key={role}
               type="button"
               onClick={() => choose(role)}
-              className={`touch-button min-h-32 rounded-2xl border p-4 text-right active:scale-[0.98] ${
-                selectedRole === role
-                  ? "border-indigo-500 bg-indigo-50 ring-4 ring-indigo-500/10 dark:bg-indigo-950"
-                  : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
-              }`}
+              className={`touch-button min-h-36 rounded-2xl border p-4 text-right transition-all active:scale-[0.98] ${selectedRole === role
+                ? "border-indigo-500 bg-indigo-50 ring-4 ring-indigo-500/20 dark:bg-indigo-950"
+                : "border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800"
+                }`}
             >
-              <strong className="font-display block text-[18px]">
-                {label}
+              <div className="flex items-center justify-between">
+                <span className="text-[24px]">{icon}</span>
+              </div>
+              <strong className="font-display mt-2 block text-[17px] font-bold">
+                {title}
               </strong>
-              <span className="mt-2 block text-[11px] font-medium leading-5 text-slate-500 dark:text-slate-400">
+              <span className="block text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
+                {subtitle}
+              </span>
+              <span className="mt-1.5 block text-[11px] font-medium leading-5 text-slate-500 dark:text-slate-400">
                 {description}
               </span>
             </button>
           ))}
         </div>
+
         {selectedRole && (
           <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-900 dark:bg-indigo-950/40">
-            <label className="block text-[11px] font-bold text-indigo-800 dark:text-indigo-200">
-              رمز {roleLabel}
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={4}
-                value={pin}
-                onChange={(event) => {
-                  setPin(event.target.value.replace(/\D/g, "").slice(0, 4))
-                  setError("")
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") submitRole()
-                }}
-                placeholder="0000"
-                className="mt-2 min-h-14 w-full rounded-xl border border-indigo-200 bg-white px-4 text-center text-[24px] font-bold tracking-[0.5em] outline-none dark:border-indigo-800 dark:bg-slate-900"
-              />
+            <label className="block text-[12px] font-bold text-indigo-900 dark:text-indigo-200">
+              أدخل رمز PIN الخاص بـ {roleLabel}
             </label>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              autoFocus
+              value={pin}
+              onChange={(event) => {
+                const next = event.target.value.replace(/\D/g, "").slice(0, 4)
+                setPin(next)
+                setError("")
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submitRole()
+              }}
+              placeholder="••••"
+              className="mt-2 min-h-14 w-full rounded-xl border border-indigo-200 bg-white px-4 text-center text-[26px] font-bold tracking-[0.5em] outline-none dark:border-indigo-800 dark:bg-slate-900"
+            />
             {error && (
               <p className="mt-2 text-[11px] font-bold text-red-600">{error}</p>
             )}
             <button
               type="button"
               onClick={submitRole}
-              disabled={pin.length !== 4}
-              className="touch-button mt-3 min-h-12 w-full rounded-xl bg-indigo-600 text-[12px] font-bold text-white disabled:bg-slate-400"
+              disabled={pin.length !== 4 || isConnecting}
+              className="touch-button mt-3 min-h-12 w-full rounded-xl bg-indigo-600 text-[13px] font-bold text-white shadow-md hover:bg-indigo-700 disabled:bg-slate-400"
             >
-              دخول {roleLabel}
+              {isConnecting ? "جاري الاتصال السحابي وتجهيز الجهاز..." : `دخول ${roleLabel}`}
             </button>
           </div>
         )}
@@ -4753,9 +5088,9 @@ function TransferCenter({
                             current.map((entry) =>
                               entry.id === line.id
                                 ? {
-                                    ...entry,
-                                    quantity: Number(event.target.value) || 0,
-                                  }
+                                  ...entry,
+                                  quantity: Number(event.target.value) || 0,
+                                }
                                 : entry,
                             ),
                           )
@@ -4874,10 +5209,10 @@ function TransferCenter({
                         const item = lineItem(line)
                         const sentDisplay = item
                           ? baseToStoredQuantity(
-                              line.quantity_sent,
-                              line.unit,
-                              item,
-                            )
+                            line.quantity_sent,
+                            line.unit,
+                            item,
+                          )
                           : line.quantity_sent
                         return (
                           <div
@@ -4971,11 +5306,10 @@ function TransferCenter({
                   key={location}
                   type="button"
                   onClick={() => setOwnerLocation(location)}
-                  className={`touch-button min-h-10 rounded-xl px-4 text-[10px] font-bold ${
-                    ownerLocation === location
-                      ? "bg-slate-950 text-white"
-                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                  }`}
+                  className={`touch-button min-h-10 rounded-xl px-4 text-[10px] font-bold ${ownerLocation === location
+                    ? "bg-slate-950 text-white"
+                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    }`}
                 >
                   {location === "all"
                     ? "الموقعان"
@@ -5091,15 +5425,14 @@ function TransferCenter({
                         أصناف
                       </span>
                       <span
-                        className={`rounded-lg px-2 py-1 font-bold ${
-                          transfer.status === "Discrepancy"
-                            ? "bg-red-100 text-red-700"
-                            : transfer.status === "Received"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : transfer.status === "Cancelled"
-                                ? "bg-slate-200 text-slate-600"
-                                : "bg-indigo-100 text-indigo-700"
-                        }`}
+                        className={`rounded-lg px-2 py-1 font-bold ${transfer.status === "Discrepancy"
+                          ? "bg-red-100 text-red-700"
+                          : transfer.status === "Received"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : transfer.status === "Cancelled"
+                              ? "bg-slate-200 text-slate-600"
+                              : "bg-indigo-100 text-indigo-700"
+                          }`}
                       >
                         {transfer.status}
                       </span>
@@ -5340,16 +5673,16 @@ function ProductManager({
 
   const recipeSummary = draft?.is_composite
     ? draftComponents
-        .map((component) => {
-          const item = products.find(
-            (entry) => entry.id === component.component_item_id,
-          )
-          return item
-            ? `${component.quantity} ${baseUnitName(component.unit)} ${item.name_ar}`
-            : ""
-        })
-        .filter(Boolean)
-        .join(" + ")
+      .map((component) => {
+        const item = products.find(
+          (entry) => entry.id === component.component_item_id,
+        )
+        return item
+          ? `${component.quantity} ${baseUnitName(component.unit)} ${item.name_ar}`
+          : ""
+      })
+      .filter(Boolean)
+      .join(" + ")
     : ""
   const calculatedRecipeCost = draftComponents.reduce((total, component) => {
     const item = products.find(
@@ -5414,7 +5747,7 @@ function ProductManager({
       if (!plan.length) {
         setImportError(
           parsed.issues[0]?.message ??
-            "لم يتم العثور على أصناف قابلة للاستيراد.",
+          "لم يتم العثور على أصناف قابلة للاستيراد.",
         )
         return
       }
@@ -5599,11 +5932,10 @@ function ProductManager({
       {(importError || importSuccess) && (
         <div
           role={importError ? "alert" : "status"}
-          className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-[11px] font-bold ${
-            importError
-              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
-              : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
-          }`}
+          className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-[11px] font-bold ${importError
+            ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+            : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
+            }`}
         >
           <span>{importError || importSuccess}</span>
           <button
@@ -5626,18 +5958,16 @@ function ProductManager({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="bulk-action-title"
-            className={`w-full max-w-[520px] rounded-[24px] border bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.4)] dark:bg-[#111827] ${
-              bulkAction === "delete"
-                ? "border-red-300 dark:border-red-900"
-                : "border-amber-300 dark:border-amber-900"
-            }`}
+            className={`w-full max-w-[520px] rounded-[24px] border bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.4)] dark:bg-[#111827] ${bulkAction === "delete"
+              ? "border-red-300 dark:border-red-900"
+              : "border-amber-300 dark:border-amber-900"
+              }`}
           >
             <span
-              className={`grid size-16 place-items-center rounded-2xl ${
-                bulkAction === "delete"
-                  ? "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-300"
-                  : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-              }`}
+              className={`grid size-16 place-items-center rounded-2xl ${bulkAction === "delete"
+                ? "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-300"
+                : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                }`}
             >
               <AlertIcon className="size-8" />
             </span>
@@ -5682,11 +6012,10 @@ function ProductManager({
                     )
                     .finally(() => setBulkBusy(false))
                 }}
-                className={`touch-button min-h-16 rounded-2xl text-[14px] font-bold text-white shadow-lg disabled:bg-slate-400 active:scale-[0.98] ${
-                  bulkAction === "delete"
-                    ? "bg-red-600 shadow-red-600/20"
-                    : "bg-amber-500 shadow-amber-500/20"
-                }`}
+                className={`touch-button min-h-16 rounded-2xl text-[14px] font-bold text-white shadow-lg disabled:bg-slate-400 active:scale-[0.98] ${bulkAction === "delete"
+                  ? "bg-red-600 shadow-red-600/20"
+                  : "bg-amber-500 shadow-amber-500/20"
+                  }`}
               >
                 {bulkBusy
                   ? "جاري الحفظ..."
@@ -5823,11 +6152,10 @@ function ProductManager({
                         }
                       </span>
                       <span
-                        className={`w-fit rounded-lg px-2 py-1 font-bold ${
-                          row.action === "add"
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                            : "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
-                        }`}
+                        className={`w-fit rounded-lg px-2 py-1 font-bold ${row.action === "add"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                          : "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+                          }`}
                       >
                         {row.action === "add" ? "إضافة" : "تحديث"}
                       </span>
@@ -5876,11 +6204,10 @@ function ProductManager({
                   onClick={() =>
                     setFilter(value as "active" | "archived" | "all")
                   }
-                  className={`touch-button min-h-11 rounded-xl text-[12px] font-bold transition ${
-                    filter === value
-                      ? "bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-white"
-                      : "text-slate-500 dark:text-slate-400"
-                  }`}
+                  className={`touch-button min-h-11 rounded-xl text-[12px] font-bold transition ${filter === value
+                    ? "bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-white"
+                    : "text-slate-500 dark:text-slate-400"
+                    }`}
                 >
                   {label}
                 </button>
@@ -5935,11 +6262,10 @@ function ProductManager({
                 {visible.map((product) => (
                   <div
                     key={product.id}
-                    className={`rounded-2xl border p-3 ${
-                      product.active === false
-                        ? "border-slate-200 bg-slate-100 opacity-75 dark:border-slate-700 dark:bg-slate-800"
-                        : "border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
-                    }`}
+                    className={`rounded-2xl border p-3 ${product.active === false
+                      ? "border-slate-200 bg-slate-100 opacity-75 dark:border-slate-700 dark:bg-slate-800"
+                      : "border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                      }`}
                   >
                     <div className="flex items-center gap-3">
                       <img
@@ -5957,11 +6283,10 @@ function ProductManager({
                           {product.unit_label}
                         </p>
                         <span
-                          className={`mt-1 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold ${
-                            product.active === false
-                              ? "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                          }`}
+                          className={`mt-1 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold ${product.active === false
+                            ? "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                            }`}
                         >
                           {product.active === false ? "مؤرشف" : "نشط"}
                         </span>
@@ -6115,11 +6440,10 @@ function ProductManager({
                       if (!isComposite) setDraftComponents([])
                       setRecipeError("")
                     }}
-                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold ${
-                      draft.is_composite === isComposite
-                        ? "bg-indigo-600 text-white shadow-sm"
-                        : "bg-white text-slate-500 dark:bg-slate-800 dark:text-slate-300"
-                    }`}
+                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold ${draft.is_composite === isComposite
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-white text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
                   >
                     {label}
                   </button>
@@ -6145,11 +6469,10 @@ function ProductManager({
                         }),
                       })
                     }
-                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold ${
-                      draft.category_id === category.id
-                        ? "bg-slate-950 text-white dark:bg-emerald-600"
-                        : "border border-slate-200 bg-white text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                    }`}
+                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold ${draft.category_id === category.id
+                      ? "bg-slate-950 text-white dark:bg-emerald-600"
+                      : "border border-slate-200 bg-white text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
                   >
                     {category.label_ar}
                   </button>
@@ -6180,11 +6503,10 @@ function ProductManager({
                         package_size: 1,
                       })
                     }
-                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-35 ${
-                      draft.unit === value
-                        ? "bg-indigo-600 text-white"
-                        : "border border-slate-200 bg-white text-slate-500 dark:border-slate-600 dark:bg-slate-800"
-                    }`}
+                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-35 ${draft.unit === value
+                      ? "bg-indigo-600 text-white"
+                      : "border border-slate-200 bg-white text-slate-500 dark:border-slate-600 dark:bg-slate-800"
+                      }`}
                   >
                     {label}
                   </button>
@@ -6315,14 +6637,14 @@ function ProductManager({
                                     current.map((entry) =>
                                       entry.id === component.id
                                         ? {
-                                            ...entry,
-                                            component_item_id:
-                                              event.target.value,
-                                            unit: item
-                                              ? defaultBaseUnit(item)
-                                              : entry.unit,
-                                            updated_at: entityTimestamp(),
-                                          }
+                                          ...entry,
+                                          component_item_id:
+                                            event.target.value,
+                                          unit: item
+                                            ? defaultBaseUnit(item)
+                                            : entry.unit,
+                                          updated_at: entityTimestamp(),
+                                        }
                                         : entry,
                                     ),
                                   )
@@ -6356,12 +6678,12 @@ function ProductManager({
                                     current.map((entry) =>
                                       entry.id === component.id
                                         ? {
-                                            ...entry,
-                                            quantity: Number(
-                                              event.target.value,
-                                            ),
-                                            updated_at: entityTimestamp(),
-                                          }
+                                          ...entry,
+                                          quantity: Number(
+                                            event.target.value,
+                                          ),
+                                          updated_at: entityTimestamp(),
+                                        }
                                         : entry,
                                     ),
                                   )
@@ -6418,11 +6740,10 @@ function ProductManager({
                     setImageSource("library")
                     setUploadError("")
                   }}
-                  className={`touch-button flex min-h-12 items-center justify-center gap-2 rounded-xl text-[11px] font-bold ${
-                    imageSource === "library"
-                      ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300"
-                      : "text-slate-500 dark:text-slate-400"
-                  }`}
+                  className={`touch-button flex min-h-12 items-center justify-center gap-2 rounded-xl text-[11px] font-bold ${imageSource === "library"
+                    ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300"
+                    : "text-slate-500 dark:text-slate-400"
+                    }`}
                 >
                   <ImageLibraryIcon className="size-5" />
                   الصور المتوفرة
@@ -6433,11 +6754,10 @@ function ProductManager({
                     setImageSource("upload")
                     setUploadError("")
                   }}
-                  className={`touch-button flex min-h-12 items-center justify-center gap-2 rounded-xl text-[11px] font-bold ${
-                    imageSource === "upload"
-                      ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300"
-                      : "text-slate-500 dark:text-slate-400"
-                  }`}
+                  className={`touch-button flex min-h-12 items-center justify-center gap-2 rounded-xl text-[11px] font-bold ${imageSource === "upload"
+                    ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300"
+                    : "text-slate-500 dark:text-slate-400"
+                    }`}
                 >
                   <UploadImageIcon className="size-5" />
                   رفع من الجهاز
@@ -6460,11 +6780,10 @@ function ProductManager({
                       type="button"
                       onClick={() => setDraft({ ...draft, image_url: image })}
                       aria-label="اختيار صورة المنتج"
-                      className={`touch-button overflow-hidden rounded-xl border-2 ${
-                        draft.image_url === image
-                          ? "border-emerald-500 shadow-md shadow-emerald-500/20"
-                          : "border-transparent"
-                      }`}
+                      className={`touch-button overflow-hidden rounded-xl border-2 ${draft.image_url === image
+                        ? "border-emerald-500 shadow-md shadow-emerald-500/20"
+                        : "border-transparent"
+                        }`}
                     >
                       <img
                         onError={handleImageError}
@@ -6570,6 +6889,7 @@ function OwnerConfigurator({
   onManageProducts,
   onOpenAnalytics,
   onOpenBackup,
+  onOpenDeviceConnect,
   onRoleChange,
   onResetRequest,
   onResetCancel,
@@ -6593,6 +6913,7 @@ function OwnerConfigurator({
   onManageProducts: () => void
   onOpenAnalytics: () => void
   onOpenBackup: () => void
+  onOpenDeviceConnect: () => void
   onRoleChange: (role: DeviceRole) => void
   onResetRequest: () => void
   onResetCancel: () => void
@@ -6767,6 +7088,40 @@ function OwnerConfigurator({
               </button>
             </section>
 
+            <section className="rounded-2xl border border-teal-200 bg-teal-50 p-4 dark:border-teal-900 dark:bg-teal-950/40">
+              <div className="flex items-center gap-3">
+                <span className="grid size-11 place-items-center rounded-xl bg-white text-teal-600 shadow-sm dark:bg-slate-800 dark:text-teal-300">
+                  <OwnerSettingsIcon className="size-5" />
+                </span>
+                <div>
+                  <h3 className="font-display text-[15px] font-bold">
+                    معرّف الفرع السحابي
+                  </h3>
+                  <p className="mt-1 text-[10px] font-medium text-teal-700 dark:text-teal-300">
+                    لربط أجهزة الملحمة والمطعم والمالك فورياً
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 rounded-xl border border-teal-300 bg-white p-2.5 dark:border-teal-800 dark:bg-slate-900">
+                <p className="text-[10px] font-bold text-slate-500">
+                  معرّف الفرع النشط (Branch ID):
+                </p>
+                <code
+                  dir="ltr"
+                  className="font-mono text-[13px] font-bold text-teal-700 dark:text-teal-300"
+                >
+                  {storeAuthService.getBranchId()}
+                </code>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenDeviceConnect}
+                className="touch-button mt-3 min-h-11 w-full rounded-xl bg-teal-600 text-[12px] font-bold text-white hover:bg-teal-700 active:scale-[0.98]"
+              >
+                فتح مركز ربط الأجهزة السحابية
+              </button>
+            </section>
+
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/40">
               <div className="flex items-center gap-3">
                 <span className="grid size-11 place-items-center rounded-xl bg-white text-emerald-600 shadow-sm dark:bg-slate-800 dark:text-emerald-300">
@@ -6807,11 +7162,10 @@ function OwnerConfigurator({
                     key={role}
                     type="button"
                     onClick={() => onRoleChange(role)}
-                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold ${
-                      deviceRole === role
-                        ? "bg-sky-600 text-white"
-                        : "bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                    }`}
+                    className={`touch-button min-h-11 rounded-xl text-[10px] font-bold ${deviceRole === role
+                      ? "bg-sky-600 text-white"
+                      : "bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
                   >
                     {label}
                   </button>
@@ -7116,13 +7470,12 @@ function ProductCard({
         if (event.key === "Enter" || event.key === " ") onSelect()
       }}
       aria-pressed={selected}
-      className={`product-card touch-button group flex min-h-[258px] min-w-0 flex-col overflow-hidden rounded-2xl border-2 p-3.5 text-right transition ${
-        selected
-          ? "border-emerald-600 bg-emerald-50 shadow-[0_8px_28px_rgba(5,150,105,0.16)] dark:border-emerald-400 dark:bg-emerald-950/50"
-          : weight === null
-            ? "border-dashed border-slate-300 bg-slate-50/70 dark:border-slate-600 dark:bg-slate-800/40"
-            : "border-slate-200 bg-white shadow-[0_5px_18px_rgba(15,23,42,0.05)] hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-500"
-      }`}
+      className={`product-card touch-button group flex min-h-[258px] min-w-0 flex-col overflow-hidden rounded-2xl border-2 p-3.5 text-right transition ${selected
+        ? "border-emerald-600 bg-emerald-50 shadow-[0_8px_28px_rgba(5,150,105,0.16)] dark:border-emerald-400 dark:bg-emerald-950/50"
+        : weight === null
+          ? "border-dashed border-slate-300 bg-slate-50/70 dark:border-slate-600 dark:bg-slate-800/40"
+          : "border-slate-200 bg-white shadow-[0_5px_18px_rgba(15,23,42,0.05)] hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-500"
+        }`}
     >
       <div className="flex min-w-0 items-start gap-3">
         <div className="relative size-[92px] shrink-0 overflow-hidden rounded-[14px] bg-slate-100 shadow-sm">
@@ -7180,9 +7533,8 @@ function ProductCard({
           الفعلي {difference === null ? "" : `· الفرق ${difference.toFixed(2)}`}
         </span>
         <strong
-          className={`text-[33px] font-bold leading-none tabular-nums ${
-            weight === null ? "text-slate-300 dark:text-slate-600" : ""
-          }`}
+          className={`text-[33px] font-bold leading-none tabular-nums ${weight === null ? "text-slate-300 dark:text-slate-600" : ""
+            }`}
         >
           {weight === null ? "— —" : weight.toFixed(2)}{" "}
           <span className="text-[12px] font-semibold text-slate-500">
@@ -7241,9 +7593,8 @@ function SummaryMetric({
         {label}
       </span>
       <strong
-        className={`text-[13px] font-bold tabular-nums ${
-          danger ? "text-red-600 dark:text-red-400" : ""
-        }`}
+        className={`text-[13px] font-bold tabular-nums ${danger ? "text-red-600 dark:text-red-400" : ""
+          }`}
       >
         {value} <span className="text-[10px]">{unit}</span>
       </strong>

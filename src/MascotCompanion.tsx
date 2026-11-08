@@ -177,10 +177,7 @@ export function MascotCompanion({
     }
   }
 
-  const renderPosition = (
-    next: { x: number; y: number },
-    immediate = false,
-  ) => {
+  const renderPosition = (next: { x: number; y: number }, immediate = false) => {
     positionRef.current = next
     const updateTransform = () => {
       animationFrameRef.current = null

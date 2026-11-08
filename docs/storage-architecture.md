@@ -56,21 +56,16 @@ warning.
 ## Data ownership and synchronization
 
 The system is offline-first. IndexedDB and SQLite remain the authoritative
-local stores and JSON files are portable backups. A Supabase edge function
-currently mirrors selected shared keys between devices; device role, theme,
-owner phone, owner PIN, pending report, scale name, and mascot position remain
-local-only.
+local stores and JSON files are portable backups. Cloud Firestore (Firebase)
+mirrors selected shared keys in real time across branch devices; device role,
+theme, owner phone, owner PIN, pending report, scale name, and mascot position
+remain local-only.
 
-The current remote protocol stores one project-wide snapshot and applies
-key-level last-write-wins updates. It is suitable only when each merchant has an
-isolated Supabase project and concurrent edits to the same key are rare. It is
-not tenant-isolated SaaS storage and does not provide record-level conflict
-resolution.
-
-A production multi-tenant replacement must use authenticated tenant ownership,
-immutable operation IDs, per-record revisions, a durable outbox/inbox,
-idempotent server writes, and explicit conflict handling. Local SQLite or
-IndexedDB must remain usable while offline.
+The cloud synchronization protocol uses Cloud Firestore document-per-key
+collections under `branches/{branchId}/keys/{key}` with real-time listeners
+(`onSnapshot`). Only changed keys are transmitted (delta sync), preventing
+1MB document limits and eliminating the latency of polling loops. Local SQLite
+or IndexedDB remains 100% usable while offline.
 
 ## Android workflow
 

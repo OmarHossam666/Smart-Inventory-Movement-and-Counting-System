@@ -11,7 +11,8 @@
     "format": "oxfmt",
     "android:add": "cap add android",
     "android:sync": "pnpm build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "android:release": "pnpm android:sync && powershell -ExecutionPolicy Bypass -File android/build-release.ps1"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^8.3.0",
@@ -19,6 +20,7 @@
     "@capacitor-community/sqlite": "^8.1.1",
     "@capacitor/android": "^8.6.0",
     "@capacitor/core": "^8.6.0",
+    "firebase": "^13.2.0",
     "jspdf": "^4.2.1",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",

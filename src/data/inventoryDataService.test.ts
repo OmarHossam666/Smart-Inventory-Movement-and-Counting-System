@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest"
 import type { Item } from "../models"
 import {
   chooseInitialCloudEntries,
+  mergeLocationWeights,
+  mergeRolePins,
+  mergeStockLedger,
+  mergeTransfers,
   migrateItemImage,
   normalizeLocationWeights,
   prepareBackupReplacements,
@@ -178,5 +182,168 @@ describe("inventory data initialization", () => {
         data: { "smart-inventory-products": "[]" },
       }),
     ).toThrow("متوافقة")
+  })
+
+  describe("multi-device synchronization merging", () => {
+    it("preserves butcher weights on butcher device and avoids remote clobbering", () => {
+      const local = {
+        butcher: { "item-1": 15 },
+        restaurant: { "item-1": 5 },
+      }
+      const remote = {
+        butcher: { "item-1": 10 },
+        restaurant: { "item-1": 8 },
+      }
+
+      // On butcher device, local butcher weights must win, restaurant weights take remote
+      const merged = mergeLocationWeights(local, remote, "butcher")
+      expect(merged.butcher["item-1"]).toBe(15)
+      expect(merged.restaurant["item-1"]).toBe(8)
+    })
+
+    it("preserves restaurant weights on restaurant device and takes butcher updates", () => {
+      const local = {
+        butcher: { "item-1": 10 },
+        restaurant: { "item-1": 20 },
+      }
+      const remote = {
+        butcher: { "item-1": 15 },
+        restaurant: { "item-1": 12 },
+      }
+
+      // On restaurant device, local restaurant weights must win, butcher weights take remote
+      const merged = mergeLocationWeights(local, remote, "restaurant")
+      expect(merged.butcher["item-1"]).toBe(15)
+      expect(merged.restaurant["item-1"]).toBe(20)
+    })
+
+    it("never allows a received transfer to revert back to sent status", () => {
+      const local = [
+        {
+          id: "T1",
+          status: "Received" as const,
+          from_location: "butcher" as const,
+          to_location: "restaurant" as const,
+          sent_at: "2026-01-01T10:00:00.000Z",
+          received_at: "2026-01-01T10:05:00.000Z",
+          cancelled_reason: null,
+          created_at: "2026-01-01T10:00:00.000Z",
+          updated_at: "2026-01-01T10:05:00.000Z",
+        },
+      ]
+      const staleRemote = [
+        {
+          id: "T1",
+          status: "Sent" as const,
+          from_location: "butcher" as const,
+          to_location: "restaurant" as const,
+          sent_at: "2026-01-01T10:00:00.000Z",
+          received_at: null,
+          cancelled_reason: null,
+          created_at: "2026-01-01T10:00:00.000Z",
+          updated_at: "2026-01-01T10:00:00.000Z",
+        },
+      ]
+
+      const merged = mergeTransfers(local, staleRemote)
+      expect(merged).toHaveLength(1)
+      expect(merged[0].status).toBe("Received")
+      expect(merged[0].received_at).toBe("2026-01-01T10:05:00.000Z")
+    })
+
+    it("accepts a newly received transfer from remote onto sender device", () => {
+      const localSent = [
+        {
+          id: "T1",
+          status: "Sent" as const,
+          from_location: "butcher" as const,
+          to_location: "restaurant" as const,
+          sent_at: "2026-01-01T10:00:00.000Z",
+          received_at: null,
+          cancelled_reason: null,
+          created_at: "2026-01-01T10:00:00.000Z",
+          updated_at: "2026-01-01T10:00:00.000Z",
+        },
+      ]
+      const remoteReceived = [
+        {
+          id: "T1",
+          status: "Received" as const,
+          from_location: "butcher" as const,
+          to_location: "restaurant" as const,
+          sent_at: "2026-01-01T10:00:00.000Z",
+          received_at: "2026-01-01T10:05:00.000Z",
+          cancelled_reason: null,
+          created_at: "2026-01-01T10:00:00.000Z",
+          updated_at: "2026-01-01T10:05:00.000Z",
+        },
+      ]
+
+      const merged = mergeTransfers(localSent, remoteReceived)
+      expect(merged[0].status).toBe("Received")
+    })
+
+    it("ensures non-owner devices always accept owner-configured PINs", () => {
+      const localDefault = { butcher: "0000", restaurant: "0000" }
+      const remoteCustom = { butcher: "1234", restaurant: "5678" }
+
+      const onButcher = mergeRolePins(localDefault, remoteCustom, "butcher")
+      expect(onButcher.butcher).toBe("1234")
+      expect(onButcher.restaurant).toBe("5678")
+
+      const onRestaurant = mergeRolePins(localDefault, remoteCustom, "restaurant")
+      expect(onRestaurant.butcher).toBe("1234")
+      expect(onRestaurant.restaurant).toBe("5678")
+    })
+
+    it("merges stock ledger movements without duplicating IDs and orders chronologically", () => {
+      const local = [
+        {
+          id: "M1",
+          item_id: "I1",
+          location: "butcher" as const,
+          type: "count" as const,
+          quantity: 10,
+          unit: "g" as const,
+          parent_movement_id: null,
+          reference_id: null,
+          note: "",
+          created_at: "2026-01-01T10:00:00.000Z",
+          updated_at: "2026-01-01T10:00:00.000Z",
+        },
+      ]
+      const remote = [
+        {
+          id: "M1", // Duplicate
+          item_id: "I1",
+          location: "butcher" as const,
+          type: "count" as const,
+          quantity: 10,
+          unit: "g" as const,
+          parent_movement_id: null,
+          reference_id: null,
+          note: "",
+          created_at: "2026-01-01T10:00:00.000Z",
+          updated_at: "2026-01-01T10:00:00.000Z",
+        },
+        {
+          id: "M2", // New from restaurant
+          item_id: "I1",
+          location: "restaurant" as const,
+          type: "count" as const,
+          quantity: 5,
+          unit: "g" as const,
+          parent_movement_id: null,
+          reference_id: null,
+          note: "",
+          created_at: "2026-01-01T10:02:00.000Z",
+          updated_at: "2026-01-01T10:02:00.000Z",
+        },
+      ]
+
+      const merged = mergeStockLedger(local, remote)
+      expect(merged).toHaveLength(2)
+      expect(merged.map((m) => m.id)).toEqual(["M1", "M2"])
+    })
   })
 })

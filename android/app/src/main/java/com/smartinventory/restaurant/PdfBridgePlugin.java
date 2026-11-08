@@ -114,13 +114,13 @@ public class PdfBridgePlugin extends Plugin {
                 return;
             }
 
-            Intent intent = new Intent(Intent.ACTION_SEND)
-                .setType(PDF_MIME_TYPE)
-                .setPackage(packageName)
-                .putExtra(Intent.EXTRA_STREAM, uri)
-                .putExtra(Intent.EXTRA_TEXT, call.getString("text", ""))
-                .setClipData(ClipData.newUri(getContext().getContentResolver(), "PDF", uri))
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType(PDF_MIME_TYPE);
+            intent.setPackage(packageName);
+            intent.putExtra(Intent.EXTRA_STREAM, uri);
+            intent.putExtra(Intent.EXTRA_TEXT, call.getString("text", ""));
+            intent.setClipData(ClipData.newUri(getContext().getContentResolver(), "PDF", uri));
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             getContext().grantUriPermission(
                 packageName,
                 uri,
