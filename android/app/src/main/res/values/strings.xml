@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">نظام حركة وجرد المخزون</string>
+    <string name="title_activity_main">نظام حركة وجرد المخزون</string>
+    <string name="package_name">com.smartinventory.restaurant</string>
+    <string name="custom_url_scheme">com.smartinventory.restaurant</string>
+</resources>

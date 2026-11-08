@@ -1,0 +1,12 @@
+{
+  "title": "نظام حركة وجرد المخزون",
+  "description": "نظام عربي لإدارة حركة وجرد مخزون الملحمة والمطعم، ومتابعة العجز والتحويلات وإصدار تقارير PDF.",
+  "language": "ar",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

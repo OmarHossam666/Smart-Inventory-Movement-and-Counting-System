@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 270" width="100%" height="100%" fill="none">
+  <style>
+    .svg-origin-center { transform-box: fill-box; transform-origin: center; }
+    .svg-origin-bottom { transform-box: fill-box; transform-origin: bottom center; }
+    @keyframes mascotBreathe { 0%, 100% { transform: translateY(0px) scaleY(1); } 50% { transform: translateY(-4px) scaleY(1.015); } }
+    @keyframes eyeBlink { 0%, 44%, 48%, 94%, 98%, 100% { transform: scaleY(1); } 46%, 96% { transform: scaleY(0.08); } }
+    @keyframes headIdle { 0%, 100% { transform: rotate(0deg) translateY(0px); } 50% { transform: rotate(1.2deg) translateY(-3px); } }
+    @keyframes headListenTilt { 0%, 100% { transform: rotate(-6deg) translate(-3px, -2px); } 50% { transform: rotate(-8deg) translate(-4px, -5px); } }
+    @keyframes headSuccessBounce { 0%, 100% { transform: translateY(0px); } 40% { transform: translateY(-7px); } }
+    @keyframes headShockShake { 0%, 100% { transform: translateX(0px); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+    @keyframes voiceWavePulse { 0% { transform: scale(0.85); opacity: 0.85; } 100% { transform: scale(1.4); opacity: 0; } }
+    @keyframes badgeFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-8px); } }
+    @keyframes sweatDrop { 0% { transform: translateY(0px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(20px); opacity: 0; } }
+    @keyframes hatSalute { 0%, 100% { transform: translateY(0px) rotate(0deg); } 50% { transform: translateY(-9px) rotate(4deg); } }
+    .anim-breathe { animation: mascotBreathe 3s ease-in-out infinite; }
+    .anim-blink { animation: eyeBlink 4.5s ease-in-out infinite; }
+    .anim-head-idle { animation: headIdle 3.2s ease-in-out infinite; }
+    .anim-head-listen { animation: headListenTilt 2s ease-in-out infinite; }
+    .anim-head-success { animation: headSuccessBounce 1.6s ease-in-out infinite; }
+    .anim-head-shock { animation: headShockShake 0.65s ease-in-out infinite; }
+    .anim-wave-1 { animation: voiceWavePulse 1.6s ease-out infinite; }
+    .anim-wave-2 { animation: voiceWavePulse 1.6s ease-out 0.5s infinite; }
+    .anim-float { animation: badgeFloat 2.2s ease-in-out infinite; }
+    .anim-sweat { animation: sweatDrop 1.5s ease-in infinite; }
+    .anim-hat-salute { animation: hatSalute 2.2s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  </style>
+  <defs>
+    <radialGradient id="auraGrad_matched" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="skinGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FED7AA"/>
+      <stop offset="100%" stop-color="#FDBA74"/>
+    </linearGradient>
+    <linearGradient id="apronGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#B91C1C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft Ambient Aura -->
+  <circle cx="130" cy="145" r="112" fill="url(#auraGrad_matched)"/>
+
+  
+          <!-- Celebratory Emerald Glow & Sparkles -->
+          <circle cx="52" cy="88" r="5" fill="#10B981" class="anim-float svg-origin-center"/>
+          <circle cx="212" cy="78" r="6" fill="#34D399" class="anim-float svg-origin-center"/>
+          <path d="M48 140 L54 146 M54 140 L48 146" stroke="#10B981" stroke-width="3" stroke-linecap="round"/>
+        
+
+  <!-- MAIN BREATHING BODY GROUP -->
+  <g class="anim-breathe svg-origin-bottom">
+
+    <!-- Chef / Butcher White Coat Torso -->
+    <path d="M72 252 C72 204 94 180 130 180 C166 180 188 204 188 252 Z" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="3"/>
+
+    <!-- Red Butcher Apron with Classic White Stripes -->
+    <path d="M90 184 H170 L178 252 H82 L90 184 Z" fill="url(#apronGrad)"/>
+    <line x1="108" y1="184" x2="105" y2="252" stroke="#FEE2E2" stroke-width="3" stroke-opacity="0.65"/>
+    <line x1="130" y1="184" x2="130" y2="252" stroke="#FEE2E2" stroke-width="3" stroke-opacity="0.65"/>
+    <line x1="152" y1="184" x2="155" y2="252" stroke="#FEE2E2" stroke-width="3" stroke-opacity="0.65"/>
+
+    <!-- Butcher Neck Scarf / Neckerchief -->
+    <path d="M102 178 Q130 196 158 178 L148 198 Q130 205 112 198 Z" fill="#0F172A"/>
+    <circle cx="130" cy="194" r="6" fill="#10B981"/>
+
+    <!-- Digital Scale Chest Pocket Badge -->
+    <rect x="112" y="212" width="36" height="22" rx="6" fill="#0F172A" stroke="#F8FAFC" stroke-width="1.8"/>
+    <circle cx="130" cy="223" r="6" fill="#10B981"/>
+    <path d="M130 223 L133 219" stroke="#0F172A" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- Dynamic Arms & State Props -->
+    
+          <!-- Right Arm Thumbs Up -->
+          <path d="M78 190 Q52 178 62 154" stroke="#F8FAFC" stroke-width="18" stroke-linecap="round" fill="none"/>
+          <g class="anim-float svg-origin-center">
+            <circle cx="62" cy="150" r="11" fill="#FDBA74"/>
+            <rect x="59" y="133" width="7" height="13" rx="3.5" fill="#FDBA74"/>
+          </g>
+          <!-- Left Arm + Big Verified Check Shield -->
+          <path d="M182 190 Q206 180 198 156" stroke="#F8FAFC" stroke-width="18" stroke-linecap="round" fill="none"/>
+          <g class="anim-float svg-origin-center">
+            <circle cx="202" cy="134" r="24" fill="#10B981" stroke="#FFFFFF" stroke-width="3.5"/>
+            <path d="M192 134 L199 141 L213 126" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </g>
+        
+
+    <!-- ANIMATED HEAD & CHEF HAT GROUP -->
+    <g class="anim-head-success svg-origin-bottom">
+
+      <!-- Ears -->
+      <circle cx="80" cy="134" r="11" fill="#FDBA74" stroke="#EA580C" stroke-width="1.5"/>
+      <circle cx="180" cy="134" r="11" fill="#FDBA74" stroke="#EA580C" stroke-width="1.5"/>
+
+      <!-- Head Base -->
+      <rect x="84" y="88" width="92" height="90" rx="42" fill="url(#skinGrad)" stroke="#EA580C" stroke-width="2"/>
+
+      <!-- Warm Rosy Cheeks -->
+      <ellipse cx="97" cy="140" rx="8" ry="5" fill="#F87171" fill-opacity="0.45"/>
+      <ellipse cx="163" cy="140" rx="8" ry="5" fill="#F87171" fill-opacity="0.45"/>
+
+      <!-- Eyebrows -->
+      
+          <path d="M96 113 Q108 105 119 112" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+          <path d="M141 112 Q152 105 164 113" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+        
+
+      <!-- Expressive Eyes -->
+      
+        <g class="anim-blink svg-origin-center">
+          <ellipse cx="109" cy="128" rx="6.5" ry="7.5" fill="#0F172A"/>
+          <circle cx="107" cy="125.5" r="2.2" fill="#FFFFFF"/>
+          <ellipse cx="151" cy="128" rx="6.5" ry="7.5" fill="#0F172A"/>
+          <circle cx="149" cy="125.5" r="2.2" fill="#FFFFFF"/>
+        </g>
+      
+
+      <!-- Friendly Rounded Nose -->
+      <ellipse cx="130" cy="136" rx="7.5" ry="6" fill="#FB923C"/>
+
+      <!-- Mouth -->
+      
+          <path d="M114 153 Q130 172 146 153 Z" fill="#991B1B" stroke="#7F1D1D" stroke-width="2"/>
+          <path d="M119 154 H141 V158 Q130 161 119 158 Z" fill="#FFFFFF"/>
+        
+
+      <!-- Signature Master Butcher Handlebar Mustache (شنب المعلم ميزان) -->
+      <g class="anim-mustache-happy svg-origin-center">
+        <path d="M130 145 C116 142 104 154 93 150 C88 148 87 142 92 141 C97 140 100 145 107 143 C115 140 122 138 130 141 C138 138 145 140 153 143 C160 145 163 140 168 141 C173 142 172 148 167 150 C156 154 144 142 130 145 Z" fill="#1E293B"/>
+      </g>
+
+      <!-- Master Chef / Butcher Toque Hat -->
+      <g class=" svg-origin-bottom">
+        <path d="M84 78 C68 74 68 44 92 42 C98 24 122 20 130 28 C138 20 162 24 168 42 C192 44 192 74 176 78 Z" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2.5"/>
+        <!-- Hat Band with Smart Scale Accent -->
+        <rect x="84" y="74" width="92" height="18" rx="6" fill="#0F172A"/>
+        <rect x="84" y="81" width="92" height="5" fill="#10B981"/>
+        <!-- Mini Scale Icon on Hat Center -->
+        <circle cx="130" cy="83" r="9" fill="#0F172A" stroke="#FFFFFF" stroke-width="2"/>
+        <path d="M126 84 L129 87 L135 80" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+
+    </g>
+  </g>
+
+  <!-- Base Weighing Platform Pedestal -->
+  <ellipse cx="130" cy="254" rx="74" ry="8" fill="#0F172A" fill-opacity="0.35"/>
+</svg>
