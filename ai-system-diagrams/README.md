@@ -19,6 +19,33 @@ Every requirement, actor, class, state transition, and deployment node is **100%
 
 ---
 
+## 📄 Compiled Publication PDF & Automated Build Pipeline
+
+All 9 deliverables, 28 architectural diagrams, 52 Functional Requirements, 25 Non-Functional Requirements, 59 Use Cases, and the Master Requirements Traceability Matrix (RTM) have been compiled into a single, publication-grade document:
+
+- **Compiled PDF**: [**`ai-system-diagrams/ASE_Project_Deliverables.pdf`**](ASE_Project_Deliverables.pdf)  
+- **Specifications**: 118 pages, 8.07 MB, publication-grade styling with the codebase's real design system and brand assets.
+- **Orientation**: Adaptive layout featuring 86 Portrait pages and 32 Landscape pages for complex UML diagrams and matrices.
+- **Navigation**: Clickable Table of Contents with exact two-pass page numbers and full hierarchical PDF bookmarks / outline.
+
+### Single Rebuild Command
+
+To regenerate the PDF document whenever markdown specifications, diagrams, or styling change:
+
+```bash
+node ai-system-diagrams/pdf-builder/build.js
+```
+
+### Automated QA & Verification Audit
+
+To execute the 8-point quality assurance verification suite (validating metadata, page orientations, all 28 diagrams, requirements completeness, and visual previews):
+
+```bash
+python ai-system-diagrams/pdf-builder/qa_audit.py
+```
+
+---
+
 ## 📁 Deliverables Master Directory & Roadmap
 
 | Deliverable # | Title & Specification Document | Primary Formats | Key Contents & Architecture Scope | Status |
