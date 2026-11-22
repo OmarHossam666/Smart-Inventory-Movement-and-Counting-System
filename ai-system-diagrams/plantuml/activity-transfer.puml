@@ -1,0 +1,141 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 4 — Activity Diagram (Workflow 2): Inter-Location Transfer Lifecycle & Discrepancy
+' Sources: src/data/inventoryDataService.ts, src/App.tsx, src/models.ts, src/data/firebaseInventorySync.ts
+' UML 2.5 Strict Swimlane Activity Diagram
+
+title Smart Inventory — Activity Diagram\nWorkflow 2: Inter-Location Transfer Lifecycle & Discrepancy Resolution
+
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam activity {
+    BackgroundColor #F0FDF4
+    BorderColor #16A34A
+    BorderThickness 1.3
+    FontColor #14532D
+    FontSize 11
+}
+
+skinparam activityDiamond {
+    BackgroundColor #FEF3C7
+    BorderColor #D97706
+    FontColor #78350F
+    FontSize 10
+}
+
+skinparam swimlane {
+    BorderColor #64748B
+    BorderThickness 1.5
+    TitleBackgroundColor #F8FAFC
+    TitleFontColor #0F172A
+    TitleFontSize 12
+    TitleFontStyle bold
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+|#F8FAFC|Butcher Station (Sender)|
+|#F1F5F9|Firestore Sync Broker|
+|#F8FAFC|Restaurant Station (Receiver)|
+|#F1F5F9|Owner (Supervisor)|
+
+|Butcher Station (Sender)|
+start
+:Open "Transfers / التحويلات" module;
+:Click "New Outbound Transfer / تحويل جديد";
+:Select destination: Restaurant (المطعم);
+
+repeat
+    :Select meat/poultry cut from catalog;
+    :Enter measured weight (via BLE Scale or Keypad);
+    :Add optional line notes (e.g., "شقف شاورما متبلة");
+    :Append item to transfer manifest;
+repeat while (More items to add to manifest?) is ([yes])
+-> ([no]);
+
+:Review transfer manifest summary
+(total lines, total kilograms);
+:Click "Dispatch Transfer / إرسال الشحنة";
+
+:Generate unique Transfer UUID;
+:Set transfer status = "Sent";
+:Deduct / reserve dispatched stock
+in Butcher local ledger;
+
+|Firestore Sync Broker|
+:Write transfer document to
+branches/{branchId}/transfers/{transferId};
+:Broadcast real-time onSnapshot event
+to all branch subscribers;
+
+|Butcher Station (Sender)|
+if (Sender discovers error before receipt?) then ([yes: Revoke Transfer])
+    :Click "Cancel Transfer / إلغاء التحويل";
+    |Firestore Sync Broker|
+    if (Transfer status is still "Sent"?) then ([yes])
+        :Update status = "Cancelled";
+        |Butcher Station (Sender)|
+        :Revert reserved stock in Butcher ledger;
+        :Display toast: "تم إلغاء التحويل واستعادة الرصيد";
+        stop
+    else ([no: Already Received])
+        |Butcher Station (Sender)|
+        :Display error: "لا يمكن الإلغاء، تم استلام الشحنة بالفعل";
+    endif
+else ([no revocation])
+endif
+
+|Restaurant Station (Receiver)|
+:Receive real-time pending transfer notification;
+:Inspect transfer manifest details
+(sender, items, dispatched weights);
+:Weigh physical delivery cuts on kitchen scale;
+:Enter verified received weight for each line item;
+
+if (Verified received weight matches sent weight?) then ([yes: within +/- 1% tolerance])
+    :Click "Confirm & Accept / استلام وتأكيد";
+    :Set transfer status = "Received";
+    :Record receiving timestamp and recipient ID;
+    :Credit restaurant inventory stock
+    with verified received quantities;
+    |Firestore Sync Broker|
+    :Update transfer doc status = "Received";
+    |Butcher Station (Sender)|
+    :Receive confirmation: "تم استلام الشحنة بنجاح من قبل المطعم";
+else ([no: Discrepancy Detected])
+    |Restaurant Station (Receiver)|
+    :System flags line discrepancy in RED
+    delta = receivedWeight - sentWeight;
+    :Select mandatory dispute reason code:
+    * scale_difference (فرق ميزان)
+    * transit_spill (تلف / انسكاب أثناء النقل)
+    * short_delivered (نقص في التسليم)
+    * rejected (رفض الصنف لعدم المطابقة);
+    :Enter explanatory dispute comment;
+    :Click "Accept with Discrepancy / استلام مع تسجيل فرق";
+    :Set transfer status = "Discrepancy";
+    :Credit restaurant inventory ONLY
+    with actual received weight;
+    |Firestore Sync Broker|
+    :Update transfer doc status = "Discrepancy"
+    with discrepancy reason and notes;
+    |Butcher Station (Sender)|
+    :Display variance alert on Butcher terminal;
+    :Log discrepancy deficit against Butcher ledger;
+    |Owner (Supervisor)|
+    :Surface high-priority discrepancy alert
+    on Owner Analytics Dashboard;
+endif
+
+|Firestore Sync Broker|
+:Archive transfer into branch completed ledger;
+stop
+@enduml

@@ -1,0 +1,164 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 4 — Activity Diagram (Workflow 1): Inventory Counting & Multi-Modal Input
+' Sources: src/App.tsx, src/features/bleScale.ts, src/features/speechRecognition.ts, src/data/firebaseInventorySync.ts
+' UML 2.5 Strict Swimlane Activity Diagram
+
+title Smart Inventory — Activity Diagram\nWorkflow 1: Inventory Counting & Multi-Modal Input (Keypad / BLE / Voice)
+
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam activity {
+    BackgroundColor #EFF6FF
+    BorderColor #2563EB
+    BorderThickness 1.3
+    FontColor #1E3A8A
+    FontSize 11
+}
+
+skinparam activityDiamond {
+    BackgroundColor #FEF3C7
+    BorderColor #D97706
+    FontColor #78350F
+    FontSize 10
+}
+
+skinparam swimlane {
+    BorderColor #64748B
+    BorderThickness 1.5
+    TitleBackgroundColor #F8FAFC
+    TitleFontColor #0F172A
+    TitleFontSize 12
+    TitleFontStyle bold
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+|#F8FAFC|Operator (Butcher / Restaurant)|
+|#F1F5F9|UI & Counting Engine (App.tsx)|
+|#E2E8F0|Hardware Peripherals (BLE / Speech)|
+|#F8FAFC|Storage & Cloud Sync Engine|
+
+|Operator (Butcher / Restaurant)|
+start
+:Initialize active shift (morning / evening / night)
+and verify operating location;
+:Navigate category tabs (meat, poultry, etc.)
+and tap target product card;
+
+|UI & Counting Engine (App.tsx)|
+:Fetch current item expected balance,
+base unit (kg, g, piece), and previous count;
+:Display count modal with virtual numeric keypad
+and peripheral input action buttons;
+
+|Operator (Butcher / Restaurant)|
+if (Select Count Input Modality?) then ([Manual Touch Keypad])
+    |UI & Counting Engine (App.tsx)|
+    :Render virtual touch keypad (0-9, decimal);
+    |Operator (Butcher / Restaurant)|
+    :Enter numeric value via touch buttons;
+    if (Apply Quick-Count Preset?) then ([yes])
+        :Tap preset increment (+0.5, +1, +5 kg);
+        |UI & Counting Engine (App.tsx)|
+        :Add preset increment to current keypad value;
+    else ([no])
+    endif
+    :Tap "Confirm Count / تأكيد الجرد";
+
+elseif (Select Count Input Modality?) then ([BLE Weight Scale])
+    |UI & Counting Engine (App.tsx)|
+    :Trigger BLE scale reading request;
+    |Hardware Peripherals (BLE / Speech)|
+    if (Scale Connected?) then ([no])
+        :Scan for BLE devices with Weight Service 0x181D;
+        :Establish GATT connection and enable notifications;
+    else ([yes])
+    endif
+    :Place physical product on scale pan;
+    :Read GATT Weight Measurement (0x2A9D);
+    :Parse Byte 0 flags (unit SI vs Imperial)
+    and extract 16-bit weight with resolution factor;
+    repeat
+        :Sample weight streaming packets;
+    repeat while (Weight stabilized within +/-5g for >1.2s?) is ([unstable])
+    -> [stabilized];
+    :Emit stabilization indicator to UI;
+    |UI & Counting Engine (App.tsx)|
+    :Populate input field with stabilized weight;
+    |Operator (Butcher / Restaurant)|
+    :Verify reading and tap "Accept Weight";
+
+else ([Arabic Voice Recognition])
+    |UI & Counting Engine (App.tsx)|
+    :Activate microphone listener overlay;
+    |Hardware Peripherals (BLE / Speech)|
+    :Capture spoken Arabic audio stream (ar-SA);
+    :Emit raw speech transcript text;
+    |UI & Counting Engine (App.tsx)|
+    :Normalize phonetic Arabic text (strip Tashkeel, unify Alef/Yaa);
+    :Convert Arabic word numbers to digits
+    (e.g., "اثنان وعشرون ونصف" -> 22.5);
+    :Execute Levenshtein fuzzy match to resolve product;
+    :Display interpreted confirmation prompt:
+    "هل تقصد: [الصنف] [الكمية] [الوحدة]؟";
+    |Operator (Butcher / Restaurant)|
+    :Confirm spoken interpretation;
+endif
+
+|UI & Counting Engine (App.tsx)|
+:Convert entered quantity to canonical base unit
+using product unit multiplier;
+:Push previous item state to Undo Stack
+[itemId, previousCount, timestamp];
+:Calculate real-time variance:
+variance = enteredCount - expectedBalance;
+:Evaluate status category:
+* matched (variance == 0)
+* tolerance (|variance%| <= threshold)
+* shortage (variance < 0 & > threshold);
+:Update reactive item card badge in UI;
+
+fork
+    |Storage & Cloud Sync Engine|
+    :Serialize count record to IndexedDB (Web)
+    or encrypted SQLite (Android);
+fork again
+    |Storage & Cloud Sync Engine|
+    :Queue mutation into 250ms debounced
+    Firestore batch sync pipeline;
+    if (Device Online?) then ([yes])
+        :Transmit doc delta to
+        branches/{branchId}/keys/counts;
+        :Set sync pill to "Synced / متزامن";
+    else ([no])
+        :Retain mutation in pending local queue;
+        :Set sync pill to "Offline / معلق";
+    endif
+end fork
+
+|Operator (Butcher / Restaurant)|
+if (Operator notices entry mistake?) then ([Tap Undo within session])
+    |UI & Counting Engine (App.tsx)|
+    :Pop top item descriptor from Undo Stack;
+    :Revert count to previous recorded value;
+    :Recalculate variance and update status badge;
+    |Storage & Cloud Sync Engine|
+    :Persist reverted state locally and sync to cloud;
+    |UI & Counting Engine (App.tsx)|
+    :Display toast: "تم التراجع عن الجرد بنجاح";
+else ([no correction])
+endif
+
+|UI & Counting Engine (App.tsx)|
+:Advance focus to next catalog item in category;
+stop
+@enduml

@@ -1,0 +1,139 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 2 — Use Case Diagram (Part 2 of 3): Transfers, Audit & Reporting
+' Source: src/data/inventoryDataService.ts, src/AuditHistory.tsx, src/PdfReport.tsx,
+'         src/OwnerAnalytics.tsx, src/features/pdfDelivery.ts
+' UML 2.5 Strict Notation
+
+title Smart Inventory — Use Case Diagram\nPart 2: Transfers, Audit & Reporting
+
+left to right direction
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam actor {
+    BackgroundColor #F8FAFC
+    BorderColor #1E293B
+    FontColor #0F172A
+    FontSize 12
+    FontStyle bold
+}
+
+skinparam usecase {
+    BackgroundColor #F0FDF4
+    BorderColor #16A34A
+    BorderThickness 1.3
+    FontColor #14532D
+    ArrowColor #475569
+    ArrowThickness 1.1
+}
+
+skinparam rectangle {
+    BackgroundColor #FFFFFF
+    BorderColor #64748B
+    BorderThickness 1.6
+    FontColor #0F172A
+    FontSize 13
+    FontStyle bold
+}
+
+' ─── Primary Actors ───────────────────────────────────────────────
+actor "Butcher\n(الملحمة)" as butcher
+actor "Restaurant\n(المطعم)" as restaurant
+actor "Owner\n(المالك)" as owner
+
+' ─── Secondary Actors ─────────────────────────────────────────────
+actor "WhatsApp\n<<external service>>" as whatsapp
+actor "Firebase Firestore\n<<external system>>" as firestore
+
+' ─── System Boundary ──────────────────────────────────────────────
+rectangle "Smart Inventory System — Transfers, Audit & Reporting" {
+
+    ' ── Transfer Management ──────────────────────────────────────
+    usecase "UC-19\nCreate Transfer\n(Butcher → Restaurant)" as UC19
+    usecase "UC-20\nReceive Transfer\n(Record Actual Quantities)" as UC20
+    usecase "UC-21\nCancel Pending Transfer" as UC21
+    usecase "UC-22\nView Pending Transfers" as UC22
+    usecase "UC-23\nDetect Transfer Discrepancy" as UC23
+
+    ' ── Audit ────────────────────────────────────────────────────
+    usecase "UC-24\nInitiate Audit Session" as UC24
+    usecase "UC-25\nReview Incomplete Items\nbefore Finalising" as UC25
+    usecase "UC-26\nFinalise & Save Audit Record" as UC26
+    usecase "UC-27\nView Audit History" as UC27
+    usecase "UC-28\nFilter Audit Records\n(shortage / queued)" as UC28
+
+    ' ── Reporting ────────────────────────────────────────────────
+    usecase "UC-29\nGenerate PDF Audit Report" as UC29
+    usecase "UC-30\nSend Report via WhatsApp" as UC30
+    usecase "UC-31\nOpen / Save PDF\n(Native Android)" as UC31
+    usecase "UC-32\nCopy Report Text\nto Clipboard" as UC32
+
+    ' ── Owner Analytics ─────────────────────────────────────────
+    usecase "UC-33\nView Owner Analytics\nDashboard" as UC33
+    usecase "UC-34\nFilter Analytics by\nDate Range (7d/30d/all)" as UC34
+    usecase "UC-35\nIdentify Top Shortage Items" as UC35
+
+    ' ── Sync ─────────────────────────────────────────────────────
+    usecase "UC-36\nSync Transfer & Audit\nData to Cloud" as UC36
+    usecase "UC-37\nSend Sync Ping\n(notify other devices)" as UC37
+}
+
+' ─── Butcher Associations ─────────────────────────────────────────
+butcher --> UC19
+butcher --> UC21
+butcher --> UC22
+butcher --> UC24
+butcher --> UC25
+butcher --> UC26
+butcher --> UC29
+butcher --> UC30
+
+' ─── Restaurant Associations ──────────────────────────────────────
+restaurant --> UC20
+restaurant --> UC22
+restaurant --> UC24
+restaurant --> UC25
+restaurant --> UC26
+restaurant --> UC29
+restaurant --> UC30
+
+' ─── Owner Associations ───────────────────────────────────────────
+owner --> UC27
+owner --> UC28
+owner --> UC29
+owner --> UC30
+owner --> UC33
+
+' ─── Secondary Actor Associations ────────────────────────────────
+whatsapp <-- UC30
+firestore <-- UC36
+
+' ─── <<include>> Relationships ───────────────────────────────────
+UC19 ..> UC36 : <<include>>
+UC20 ..> UC36 : <<include>>
+UC20 ..> UC23 : <<include>>
+UC21 ..> UC36 : <<include>>
+
+UC24 ..> UC25 : <<include>>
+UC26 ..> UC29 : <<include>>
+UC26 ..> UC36 : <<include>>
+
+UC29 ..> UC30 : <<include>>
+
+UC27 ..> UC28 : <<include>>
+
+UC33 ..> UC34 : <<include>>
+UC33 ..> UC35 : <<include>>
+
+UC19 ..> UC37 : <<include>>
+UC20 ..> UC37 : <<include>>
+
+' ─── <<extend>> Relationships ────────────────────────────────────
+UC31 ..> UC29 : <<extend>>
+UC32 ..> UC29 : <<extend>>
+UC28 ..> UC27 : <<extend>>
+
+@enduml

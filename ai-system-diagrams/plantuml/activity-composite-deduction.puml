@@ -1,0 +1,122 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 4 — Activity Diagram (Workflow 3): Composite Item Counting & Recipe Auto-Deduction
+' Sources: src/features/compositeInventory.ts, src/models.ts, src/data/inventoryDataService.ts
+' UML 2.5 Strict Swimlane Activity Diagram
+
+title Smart Inventory — Activity Diagram\nWorkflow 3: Composite Item Counting & Recipe Auto-Deduction
+
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam activity {
+    BackgroundColor #EFF6FF
+    BorderColor #2563EB
+    BorderThickness 1.3
+    FontColor #1E3A8A
+    FontSize 11
+}
+
+skinparam activityDiamond {
+    BackgroundColor #FEF3C7
+    BorderColor #D97706
+    FontColor #78350F
+    FontSize 10
+}
+
+skinparam swimlane {
+    BorderColor #64748B
+    BorderThickness 1.5
+    TitleBackgroundColor #F8FAFC
+    TitleFontColor #0F172A
+    TitleFontSize 12
+    TitleFontStyle bold
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+|#F8FAFC|Kitchen Staff (Restaurant)|
+|#F1F5F9|Composite Inventory Engine|
+|#F8FAFC|Local Inventory Repository|
+|#F1F5F9|Firestore Sync Service|
+
+|Kitchen Staff (Restaurant)|
+start
+:Open Restaurant counting view;
+:Select prepared/composite dish from catalog
+(e.g., "برجر لحم جاهز", "شاورما محضرة");
+:Enter physical count quantity (e.g., 50 units);
+:Click "Confirm Count / تأكيد الجرد";
+
+|Composite Inventory Engine|
+:Verify product metadata:
+check isComposite == true;
+:Load recipe components array
+components: RecipeComponent[];
+
+if (Recipe components defined?) then ([yes: components.length > 0])
+    :Initialize deduction accumulator and movement batch;
+    
+    repeat
+        :Get next RecipeComponent
+        (rawItemId, requiredQtyPerUnit, unit);
+        :Calculate total ingredient consumption:
+        totalConsumed = requiredQtyPerUnit * enteredDishCount;
+        
+        |Local Inventory Repository|
+        :Query current stock balance of rawItemId;
+        
+        |Composite Inventory Engine|
+        if (Current stock >= totalConsumed?) then ([sufficient stock])
+            :Deduct totalConsumed from raw item expected stock;
+        else ([insufficient stock / negative variance])
+            :Deduct totalConsumed resulting in negative stock balance;
+            :Flag raw item with "عجز في المكونات الخام"
+            (high_shrinkage_flag = true);
+        endif
+        
+        :Generate synthetic StockMovement entity:
+        * movementType = "auto_deduct"
+        * itemId = rawItemId
+        * quantity = -totalConsumed
+        * referenceId = compositeDishId
+        * timestamp = ISOString;
+        :Append movement to atomic batch;
+    repeat while (More recipe components to process?) is ([yes])
+    -> ([no]);
+
+else ([no: misconfigured recipe])
+    :Log warning: "الصنف معرف كمركب بدون مكونات";
+    :Proceed with composite item count only;
+endif
+
+|Local Inventory Repository|
+fork
+    :Save composite dish physical count
+    in counts table;
+fork again
+    :Commit all synthetic auto_deduct movements
+    to stock_movements ledger table;
+fork again
+    :Update expected stock balances
+    for all constituent raw items;
+end fork
+
+|Firestore Sync Service|
+:Package composite count and raw deductions
+into single atomic Firestore batch;
+:Dispatch batch to branches/{branchId}/keys;
+
+|Kitchen Staff (Restaurant)|
+:Display summary notification breakdown:
+"تم جرد 50 برجر بنجاح
+وخصم: 7.5 كجم مفروم، 250 جم بهارات تلقائياً";
+stop
+@enduml

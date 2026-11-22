@@ -1,70 +1,71 @@
-%% MedPulse Hospital Management System - Deployment Diagram
-%% Generated with AI for Advanced Software Engineering
-%% Visualizing physical nodes, Kubernetes pods, and storage topologies in Mermaid.
+%% Smart Inventory Movement & Counting System
+%% Deliverable 7 — Architecture View 3: Deployment Diagram (Mermaid Companion)
+%% Sources: capacitor.config.ts, firebase.json, package.json
 
 flowchart TB
-    classDef client fill:#EFF6FF,stroke:#3B82F6,stroke-width:1.5px,color:#1E3A8A;
-    classDef edge fill:#F8FAFC,stroke:#64748B,stroke-width:1.5px,color:#0F172A;
-    classDef k8s fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D;
-    classDef data fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#78350F;
-    classDef ext fill:#F5F3FF,stroke:#8B5CF6,stroke-width:1.5px,color:#4C1D95;
+    %% ── Styling Classes ─────────────────────────────────────────
+    classDef nodeStyle  fill:#F8FAFC,stroke:#334155,stroke-width:1.5px,color:#0F172A,font-weight:700
+    classDef artStyle   fill:#EFF6FF,stroke:#2563EB,stroke-width:1.2px,color:#1E3A8A
+    classDef dbStyle    fill:#FEF3C7,stroke:#D97706,stroke-width:1.2px,color:#78350F
+    classDef cloudStyle fill:#F1F5F9,stroke:#64748B,stroke-width:2px,color:#1E293B,font-weight:700
 
-    subgraph Tier1 ["📱 Client Devices Tier"]
-        MobileApp["📱 Patient Mobile App<br/>(Flutter / iOS & Android)"]:::client
-        WebPortal["💻 EHR Web Portal<br/>(React 19 / TypeScript)"]:::client
-        IoTHub["📟 Bedside Vitals Gateway<br/>(Embedded Linux / MQTT)"]:::client
+    %% ── Workstation Nodes ───────────────────────────────────────
+    subgraph ButcherTerm ["🥩 Butcher Workstation (Android 11+ POS)"]
+        direction TB
+        ButcherApk["📱 app-release.apk\n(Capacitor 8 Hybrid App)\n[com.smartinventory.butcher]"]:::artStyle
+        ButcherDb[("💾 Encrypted SQLite DB\n[smart_inventory.db]\n(AES-256)")]:::dbStyle
+        ButcherApk <--> ButcherDb
     end
+    class ButcherTerm nodeStyle
 
-    subgraph Tier2 ["🛡️ Edge & DMZ (Cloudflare Network)"]
-        WAF["Cloudflare Edge WAF & DDoS Shield"]:::edge
-        EdgeDNS["Global Anycast DNS & SSL Offload"]:::edge
+    subgraph RestTerm ["🍳 Restaurant Workstation (Tablet / Web)"]
+        direction TB
+        RestApp["📱 app-release.apk / Web SPA\n(React 19 + Vite 8 Bundle)"]:::artStyle
+        RestDb[("💾 SQLite or IndexedDB\n[smart-inventory]")]:::dbStyle
+        RestApp <--> RestDb
     end
+    class RestTerm nodeStyle
 
-    subgraph Tier3 ["☸️ Kubernetes Production Cluster (EKS / VPC)"]
-        Ingress["Ingress Controller<br/>(Traefik / NGINX Ingress)"]:::k8s
-        
-        subgraph Microservices ["Enterprise Microservices Fleet"]
-            APIGW["API Gateway Pods (x3)<br/>(Spring Cloud / Envoy)"]:::k8s
-            EHRService["EHR & Clinical API (x4)<br/>(Spring Boot / Java 21)"]:::k8s
-            ApptService["Scheduling Service (x3)<br/>(Go 1.23 / Gin)"]:::k8s
-            BillingService["Billing & Claims Worker (x2)<br/>(Python 3.12 / FastAPI)"]:::k8s
-        end
+    subgraph OwnerTerm ["🔑 Owner Terminal (Mobile / Laptop)"]
+        direction TB
+        OwnerApp["💻 Web Client SPA\n(Vite 8 Dist Bundle)"]:::artStyle
+        OwnerDb[("💾 Browser IndexedDB\n[smart-inventory]")]:::dbStyle
+        OwnerApp <--> OwnerDb
     end
+    class OwnerTerm nodeStyle
 
-    subgraph Tier4 ["🗄️ Private Healthcare Data Subnet (Encrypted at Rest)"]
-        PGPrimary[("PostgreSQL 16 Primary<br/>[Read/Write OLTP]")]:::data
-        PGReplica[("PostgreSQL 16 Standby<br/>[Read-Only Replica]")]:::data
-        RedisCache[("Redis 7 In-Memory<br/>[Token & Session Cache]")]:::data
-        S3Store[("MinIO / S3 Storage<br/>[DICOM Medical Images]")]:::data
+    subgraph ScaleDev ["📡 BLE Digital Scale Hardware"]
+        ScaleFw["⚙️ Embedded Scale Firmware\nService: 0x181D / Char: 0x2A9D"]:::artStyle
     end
+    class ScaleDev nodeStyle
 
-    subgraph Tier5 ["☁️ External Healthcare & Payment APIs"]
-        InsuranceAPI["Insurance Clearinghouse<br/>(FHIR / HL7 REST)"]:::ext
-        StripeAPI["Stripe Gateway<br/>(PCI-DSS Tier 1)"]:::ext
-        TwilioAPI["Twilio Notification Service<br/>(SMS & Emergency Alerts)"]:::ext
+    %% ── Cloud Platform ──────────────────────────────────────────
+    subgraph GCP ["☁️ Google Cloud Platform / Firebase Infrastructure"]
+        direction TB
+        Firestore[("🔥 Google Cloud Firestore\nbranches/{branchId}/\n├── keys/\n├── transfers/\n├── presence/\n└── audits/")]:::dbStyle
+        AuthService["🔐 Firebase Authentication\n(Branch Identity Tokens)"]:::artStyle
+        HostingCDN["🌐 Firebase Hosting CDN\n(/dist static bundle)"]:::artStyle
     end
+    class GCP cloudStyle
 
-    %% Client Ingress
-    MobileApp -->|HTTPS / 443| WAF
-    WebPortal -->|HTTPS / WSS| WAF
-    IoTHub -->|MQTTS / 8883| Ingress
-    WAF -->|Internal TLS| Ingress
+    subgraph WhatsAppCloud ["💬 Meta WhatsApp Rail"]
+        WaGateway["🔗 wa.me Protocol Endpoint\nhttps://wa.me/?text=..."]:::artStyle
+    end
+    class WhatsAppCloud cloudStyle
 
-    %% Routing inside Cluster
-    Ingress -->|HTTP/2 : 8080| APIGW
-    APIGW -->|gRPC : 50051| EHRService
-    APIGW -->|gRPC : 50052| ApptService
-    APIGW -->|gRPC : 50053| BillingService
-
-    %% Database connections
-    EHRService -->|JDBC / TLS| PGPrimary
-    ApptService -->|SQL Connection Pool| PGPrimary
-    ApptService -.->|Read Queries| PGReplica
-    PGPrimary -.->|Streaming WAL Replication| PGReplica
-    EHRService -->|RESP / 6379| RedisCache
-    EHRService -->|S3 API : 9000| S3Store
-
-    %% External SaaS Integrations
-    BillingService -->|HTTPS / FHIR| InsuranceAPI
-    BillingService -->|HTTPS / Tokenized| StripeAPI
-    EHRService -->|REST Webhooks| TwilioAPI
+    %% ── Network Connections ──────────────────────────────────────
+    ScaleDev -.->|Bluetooth LE 5.0 GATT| ButcherTerm
+    
+    ButcherTerm <==>|WSS / HTTPS TLS 1.3\nonSnapshot & 250ms batch| Firestore
+    RestTerm <==>|WSS / HTTPS TLS 1.3\nonSnapshot & 250ms batch| Firestore
+    OwnerTerm <==>|WSS / HTTPS TLS 1.3\nAudits & Presence| Firestore
+    
+    ButcherTerm -.->|HTTPS / REST Auth| AuthService
+    RestTerm -.->|HTTPS / REST Auth| AuthService
+    OwnerTerm -.->|HTTPS / REST Auth| AuthService
+    
+    HostingCDN -.->|HTTPS Static Bundle| ButcherTerm
+    HostingCDN -.->|HTTPS Static Bundle| RestTerm
+    HostingCDN -.->|HTTPS Static Bundle| OwnerTerm
+    
+    OwnerTerm -.->|HTTPS Deep-Link / Intent| WaGateway

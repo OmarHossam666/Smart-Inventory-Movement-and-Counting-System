@@ -1,26 +1,29 @@
 @startuml
-' MedPulse Hospital Management System - Use Case Diagram
-' Generated with AI for Advanced Software Engineering
-title MedPulse Smart Hospital - Use Case Diagram
+' Smart Inventory Movement & Counting System
+' Deliverable 2 — Use Case Diagram (Part 1 of 3): Core Inventory & Counting
+' Source: src/App.tsx, src/models.ts, src/features/*, src/data/inventoryDataService.ts
+' UML 2.5 Strict Notation
+
+title Smart Inventory — Use Case Diagram\nPart 1: Inventory Counting & Stock Management
 
 left to right direction
-skinparam packageStyle rectangle
 skinparam shadowing false
-skinparam roundcorner 8
+skinparam roundcorner 10
 skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
-skinparam defaultFontSize 12
+skinparam defaultFontSize 11
 
-' Color palette: modern slate & ocean blue
 skinparam actor {
     BackgroundColor #F8FAFC
     BorderColor #1E293B
     FontColor #0F172A
+    FontSize 12
+    FontStyle bold
 }
 
 skinparam usecase {
     BackgroundColor #EFF6FF
     BorderColor #2563EB
-    BorderThickness 1.2
+    BorderThickness 1.3
     FontColor #1E3A8A
     ArrowColor #475569
     ArrowThickness 1.1
@@ -28,79 +31,119 @@ skinparam usecase {
 
 skinparam rectangle {
     BackgroundColor #FFFFFF
-    BorderColor #94A3B8
-    BorderThickness 1.5
+    BorderColor #64748B
+    BorderThickness 1.6
     FontColor #0F172A
-    FontSize 14
+    FontSize 13
     FontStyle bold
 }
 
-' Actors
-actor "Patient" as patient
-actor "Doctor" as doctor
-actor "Nurse" as nurse
-actor "Hospital Admin" as admin
-actor "Insurance Gateway" as insurance <<Secondary System>>
+' ─── Primary Actors ───────────────────────────────────────────────
+actor "Butcher\n(الملحمة)" as butcher
+actor "Restaurant\n(المطعم)" as restaurant
+actor "Owner\n(المالك)" as owner
 
-rectangle "MedPulse Hospital System Boundary" {
-    
-    ' Patient Use Cases
-    usecase "Register & Authenticate" as UC_Auth
-    usecase "Book Consultation Appointment" as UC_Book
-    usecase "Select Telehealth Video Session" as UC_Telehealth
-    usecase "View Medical History & EHR" as UC_ViewRecords
-    usecase "Settle Hospital Invoice" as UC_PayBill
-    usecase "Claim Insurance Coverage" as UC_InsuranceClaim
-    
-    ' Clinical Use Cases
-    usecase "Conduct Patient Consultation" as UC_Consult
-    usecase "Issue Digital Prescription" as UC_Prescribe
-    usecase "Check Drug Allergy Interactions" as UC_DrugCheck
-    usecase "Order Laboratory Tests" as UC_OrderLab
-    usecase "Record Patient Vital Signs" as UC_Vitals
-    
-    ' Administrative Use Cases
-    usecase "Manage Hospital Staff & Rosters" as UC_ManageStaff
-    usecase "Generate Hospital Analytics" as UC_Analytics
-    usecase "Audit Regulatory Access Logs" as UC_Audit
-    usecase "Verify Identity / 2FA" as UC_MFA
+' ─── Secondary Actors (External Systems / Hardware) ───────────────
+actor "BLE Scale\n<<device>>" as bleScale
+actor "Firebase Firestore\n<<external system>>" as firestore
+
+' ─── System Boundary ──────────────────────────────────────────────
+rectangle "Smart Inventory System — Inventory Counting & Stock Management" {
+
+    ' Shared / Common
+    usecase "UC-01\nSet Up Shift" as UC01
+    usecase "UC-02\nSelect Inventory Location" as UC02
+    usecase "UC-03\nSelect Item by Category" as UC03
+
+    ' Counting
+    usecase "UC-04\nRecord Item Count\n(Manual Entry)" as UC04
+    usecase "UC-05\nRecord Item Count\n(BLE Scale Reading)" as UC05
+    usecase "UC-06\nRecord Item Count\n(Voice Input)" as UC06
+    usecase "UC-07\nApply Quick-Count Preset" as UC07
+    usecase "UC-08\nUndo Last Count" as UC08
+
+    ' Status & Calculation
+    usecase "UC-09\nView Inventory Status\n(matched/shortage/tolerance)" as UC09
+    usecase "UC-10\nCalculate Expected Balance" as UC10
+
+    ' Waste
+    usecase "UC-11\nRecord Waste" as UC11
+
+    ' Composite Items
+    usecase "UC-12\nCount Composite Item\n(Recipe-Based)" as UC12
+    usecase "UC-13\nAuto-Deduct Recipe\nComponent Quantities" as UC13
+
+    ' BLE Scale
+    usecase "UC-14\nConnect BLE Scale" as UC14
+    usecase "UC-15\nRead Weight from Scale" as UC15
+
+    ' Voice
+    usecase "UC-16\nCapture Arabic Voice Input" as UC16
+    usecase "UC-17\nParse Spoken Weight\n(numbers, fractions)" as UC17
+
+    ' Sync
+    usecase "UC-18\nSync Count Data to Cloud" as UC18
 }
 
-' Patient Associations
-patient --> UC_Auth
-patient --> UC_Book
-patient --> UC_ViewRecords
-patient --> UC_PayBill
+' ─── Butcher Associations ─────────────────────────────────────────
+butcher --> UC01
+butcher --> UC02
+butcher --> UC03
+butcher --> UC04
+butcher --> UC05
+butcher --> UC06
+butcher --> UC07
+butcher --> UC08
+butcher --> UC09
+butcher --> UC11
+butcher --> UC12
+butcher --> UC14
 
-' Doctor Associations
-doctor --> UC_Auth
-doctor --> UC_Consult
-doctor --> UC_Prescribe
-doctor --> UC_OrderLab
-doctor --> UC_ViewRecords
+' ─── Restaurant Associations ──────────────────────────────────────
+restaurant --> UC01
+restaurant --> UC02
+restaurant --> UC03
+restaurant --> UC04
+restaurant --> UC05
+restaurant --> UC06
+restaurant --> UC07
+restaurant --> UC08
+restaurant --> UC09
+restaurant --> UC11
+restaurant --> UC14
 
-' Nurse Associations
-nurse --> UC_Auth
-nurse --> UC_Vitals
-nurse --> UC_ViewRecords
+' ─── Owner Associations ───────────────────────────────────────────
+owner --> UC01
+owner --> UC09
 
-' Admin Associations
-admin --> UC_Auth
-admin --> UC_ManageStaff
-admin --> UC_Analytics
-admin --> UC_Audit
+' ─── Secondary Actor Associations ────────────────────────────────
+bleScale --> UC15
+firestore <-- UC18
 
-' Secondary System Associations
-insurance <-- UC_InsuranceClaim
+' ─── <<include>> Relationships ───────────────────────────────────
+' (mandatory sub-behaviors)
+UC04 ..> UC10 : <<include>>
+UC05 ..> UC10 : <<include>>
+UC06 ..> UC10 : <<include>>
+UC07 ..> UC10 : <<include>>
+UC09 ..> UC10 : <<include>>
 
-' Use Case Relationships: <<include>>
-UC_Book ..> UC_MFA : <<include>>
-UC_ViewRecords ..> UC_MFA : <<include>>
-UC_Consult ..> UC_ViewRecords : <<include>>
-UC_Prescribe ..> UC_DrugCheck : <<include>>
+UC05 ..> UC15 : <<include>>
+UC05 ..> UC14 : <<include>>
 
-' Use Case Relationships: <<extend>>
-UC_Telehealth ..> UC_Book : <<extend>>
-UC_InsuranceClaim ..> UC_PayBill : <<extend>>
+UC06 ..> UC16 : <<include>>
+UC16 ..> UC17 : <<include>>
+
+UC12 ..> UC13 : <<include>>
+UC12 ..> UC04 : <<include>>
+
+UC04 ..> UC18 : <<include>>
+UC11 ..> UC18 : <<include>>
+UC12 ..> UC18 : <<include>>
+
+' ─── <<extend>> Relationships ────────────────────────────────────
+' (optional/conditional behaviors)
+UC07 ..> UC04 : <<extend>>
+UC08 ..> UC04 : <<extend>>
 
 @enduml

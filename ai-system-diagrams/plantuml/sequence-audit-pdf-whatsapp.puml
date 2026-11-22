@@ -1,0 +1,133 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 6 — Sequence Diagram (Flow 5): Audit Finalization, Canvas PDF & WhatsApp Dispatch
+' Sources: src/App.tsx, src/data/inventoryDataService.ts, src/PdfReport.tsx, src/features/pdfDelivery.ts
+' UML 2.5 Strict Sequence Diagram with Activation Bars & Interaction Frames
+
+title Smart Inventory — Sequence Diagram\nFlow 5: Comprehensive Audit Finalization, Canvas PDF Generation & WhatsApp Dispatch
+
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+
+skinparam sequence {
+    ArrowColor #1E293B
+    ArrowThickness 1.2
+    LifeLineBorderColor #EA580C
+    LifeLineBackgroundColor #FFF7ED
+    ParticipantBorderColor #334155
+    ParticipantBackgroundColor #F8FAFC
+    ParticipantFontSize 11
+    ParticipantFontStyle bold
+    ActorBorderColor #1E293B
+    ActorBackgroundColor #F8FAFC
+}
+
+actor "Owner / Auditor" as owner
+participant "AppController\n(src/App.tsx)" as app
+participant "InventoryDataService\n(src/data/)" as dataService
+database "Firebase Firestore\n(Cloud BaaS)" as firestore
+participant "PdfReport\n(src/PdfReport.tsx)" as pdfEngine
+entity "HTML5 <canvas>\n(2x DPI Buffer)" as canvas
+participant "jsPDF Engine\n(Client Vector PDF)" as jspdf
+participant "WhatsApp / OS Share\n(src/features/pdfDelivery.ts)" as whatsapp
+
+autonumber 5.0
+
+== 1. Audit Reconciliation & Security PIN Gate ==
+owner -> app : Click "Finish & Archive Audit / إنهاء واعتماد الجرد"
+activate app
+app -> app : computeAggregateMetrics()
+note right of app
+  Calculate:
+  * matchedCount, toleranceCount, shortageCount
+  * totalVarianceKg = sum(entered - expected)
+  * estimatedShrinkageCost
+end note
+
+app -> app : Render Variance Review Modal
+owner -> app : Review discrepancies & Click "Commit Final Audit"
+
+loop [Until 4-Digit Owner PIN Valid]
+    app -> owner : Prompt Security PIN Modal
+    owner -> app : Enter 4-digit PIN
+    app -> app : compareHash(enteredPin, storedOwnerPinHash)
+    alt [PIN Incorrect]
+        app -> app : Trigger error shake & increment fail count
+        note right of app : Lockout 30s after 3 consecutive failures
+    else [PIN Valid]
+        app -> app : Unlock privileged execution
+    end
+end
+
+== 2. Immutable Audit Archival ==
+app -> dataService : saveAuditRecord(auditRecord)
+activate dataService
+dataService -> dataService : generateUUID() -> auditId
+dataService -> dataService : buildImmutableSnapshot(auditRecord)
+
+par [Dual Local & Cloud Archival]
+    dataService -> dataService : persistToLocalAudits(auditRecord)
+else
+    dataService -> firestore : setDoc(branches/{branchId}/audits/{auditId}, auditRecord)
+    activate firestore
+    firestore --> dataService : Document Committed
+    deactivate firestore
+end
+
+dataService -> dataService : resetActiveShiftCounters()
+dataService --> app : Audit Saved Successfully
+deactivate dataService
+app --> owner : Toast: "تم اعتماد وترحيل الجرد بنجاح"
+
+== 3. 2x High-DPI Canvas Rendering & PDF Generation ==
+owner -> app : Click "Generate PDF Report / تقرير PDF"
+app -> pdfEngine : renderAuditReport(auditRecord, itemsCatalog)
+activate pdfEngine
+
+pdfEngine -> canvas : createCanvas(2x Retina Resolution)
+activate canvas
+pdfEngine -> canvas : drawStoreBrandingAndHeader(title, date, shift)
+pdfEngine -> canvas : drawSummaryCards(totalItems, matchedRate, totalVarianceKg)
+pdfEngine -> canvas : drawRtlTable(Item, Unit, Expected, Count, Variance, Status)
+canvas --> pdfEngine : Rendered Canvas Buffer Complete
+deactivate canvas
+
+pdfEngine -> jspdf : addImage(canvasData, "PNG", 0, 0, A4_WIDTH, A4_HEIGHT)
+activate jspdf
+jspdf -> jspdf : compileVectorPdfDocument()
+jspdf --> pdfEngine : pdfBlob
+deactivate jspdf
+
+pdfEngine --> app : Display Interactive PDF Preview Modal
+deactivate pdfEngine
+
+== 4. External Dispatch (WhatsApp & Native Share) ==
+owner -> app : Click "Share via WhatsApp / مشاركة واتساب"
+app -> whatsapp : sharePdfViaWhatsApp(pdfBlob, auditSummaryText)
+activate whatsapp
+
+whatsapp -> whatsapp : compileArabicSummaryText(auditRecord)
+note right of whatsapp
+  "📊 تقرير جرد المخزون - فرع [الفرع]
+  التاريخ: [التاريخ] | الوردية: [الوردية]
+  إجمالي الأصناف: [العدد] | نسبة المطابقة: [%]
+  صافي العجز: [كجم]
+  أبرز الفروقات: [...]"
+end note
+
+whatsapp -> whatsapp : encodeURIComponent(summaryText)
+whatsapp -> whatsapp : window.open("https://wa.me/?text=" + encodedText)
+
+opt [Running on Native Android via Capacitor]
+    whatsapp -> whatsapp : Share.share({ title: "Audit Report", files: [pdfFilePath] })
+end
+
+whatsapp --> app : Shared Successfully
+deactivate whatsapp
+app --> owner : Confirmation: "تم إرسال التقرير بنجاح"
+deactivate app
+
+@enduml

@@ -1,83 +1,170 @@
-%% MedPulse Hospital Management System - Use Case Diagram
-%% Generated with AI for Advanced Software Engineering
-%% Note: Mermaid renders Use Case diagrams via styled flowcharts with system boundaries and oval use cases.
+%% Smart Inventory Movement & Counting System
+%% Deliverable 2 — Use Case Diagram (Mermaid companion — Overview)
+%% Shows the full actor-to-use-case-domain map across all three parts.
+%% For detailed UML 2.5 diagrams, see the PlantUML .puml files.
 
 flowchart LR
-    %% Actor Styling Classes
-    classDef actor fill:#F8FAFC,stroke:#0F172A,stroke-width:2px,color:#0F172A,font-weight:600;
-    classDef secondary fill:#F1F5F9,stroke:#475569,stroke-width:1.5px,stroke-dasharray: 4 2,color:#1E293B;
-    classDef usecase fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#1E3A8A;
-    classDef includeExtend fill:#FEF3C7,stroke:#D97706,stroke-width:1.2px,color:#78350F;
+    %% ── Styling Classes ─────────────────────────────────────────
+    classDef actor      fill:#F8FAFC,stroke:#1E293B,stroke-width:2px,color:#0F172A,font-weight:700
+    classDef secondary  fill:#F1F5F9,stroke:#475569,stroke-width:1.5px,stroke-dasharray:4 2,color:#334155
+    classDef domain1    fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#1E3A8A
+    classDef domain2    fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D
+    classDef domain3    fill:#FFF7ED,stroke:#EA580C,stroke-width:1.5px,color:#7C2D12
+    classDef incexd     fill:#FEF3C7,stroke:#D97706,stroke-width:1.2px,color:#78350F,font-style:italic
 
-    %% Primary Actors
-    subgraph Actors ["👥 Hospital & Patient Actors"]
+    %% ── Primary Actors ──────────────────────────────────────────
+    subgraph Actors ["👥 Primary Actors"]
         direction TB
-        Patient["👤 Patient"]:::actor
-        Doctor["👨‍⚕️ Doctor"]:::actor
-        Nurse["👩‍⚕️ Nurse"]:::actor
-        Admin["🔑 Hospital Admin"]:::actor
+        Butcher["👤 Butcher\n(الملحمة)"]:::actor
+        Restaurant["👤 Restaurant\n(المطعم)"]:::actor
+        Owner["🔑 Owner\n(المالك)"]:::actor
     end
 
-    %% System Boundary
-    subgraph SystemBoundary ["🏥 MedPulse Hospital System Boundary"]
+    %% ── Secondary Actors ────────────────────────────────────────
+    subgraph External ["⚙️ Secondary Actors / Systems"]
         direction TB
-        
-        %% Patient Core Use Cases
-        UC_Auth(["Register & Login"]):::usecase
-        UC_Book(["Book Consultation Appointment"]):::usecase
-        UC_Telehealth(["Select Telehealth Video Session"]):::usecase
-        UC_ViewRecords(["View Medical History & EHR"]):::usecase
-        UC_PayBill(["Settle Hospital Invoice"]):::usecase
-        UC_InsuranceClaim(["Claim Insurance Coverage"]):::usecase
-
-        %% Clinical Use Cases
-        UC_Consult(["Conduct Patient Consultation"]):::usecase
-        UC_Prescribe(["Issue Digital Prescription"]):::usecase
-        UC_DrugCheck(["Check Drug Allergy Interactions"]):::includeExtend
-        UC_OrderLab(["Order Laboratory Tests"]):::usecase
-        UC_Vitals(["Record Patient Vital Signs"]):::usecase
-
-        %% Administrative & Security Use Cases
-        UC_ManageStaff(["Manage Staff & Rosters"]):::usecase
-        UC_Analytics(["Generate Hospital Analytics"]):::usecase
-        UC_Audit(["Audit Regulatory Access Logs"]):::usecase
-        UC_MFA(["Verify Identity / 2FA"]):::includeExtend
-
-        %% Include relationships
-        UC_Book -.->|&laquo;include&raquo;| UC_MFA
-        UC_ViewRecords -.->|&laquo;include&raquo;| UC_MFA
-        UC_Consult -.->|&laquo;include&raquo;| UC_ViewRecords
-        UC_Prescribe -.->|&laquo;include&raquo;| UC_DrugCheck
-
-        %% Extend relationships
-        UC_Telehealth -.->|&laquo;extend&raquo;| UC_Book
-        UC_InsuranceClaim -.->|&laquo;extend&raquo;| UC_PayBill
+        BLE["📡 BLE Scale\n«device»"]:::secondary
+        Firestore["☁️ Firebase Firestore\n«external system»"]:::secondary
+        FireAuth["🔐 Firebase Auth\n«external system»"]:::secondary
+        WhatsApp["💬 WhatsApp\n«external service»"]:::secondary
     end
 
-    %% Secondary Systems
-    subgraph ExternalSystems ["🏢 External Providers"]
-        InsuranceGW["Insurance Clearinghouse Gateway"]:::secondary
+    %% ── Domain 1: Inventory Counting & Stock ────────────────────
+    subgraph D1 ["📦 Domain 1 · Inventory Counting & Stock"]
+        direction TB
+        UC01(["UC-01 Set Up Shift"]):::domain1
+        UC03(["UC-03 Select Item by Category"]):::domain1
+        UC04(["UC-04 Record Item Count (Manual)"]):::domain1
+        UC05(["UC-05 Record Count via BLE Scale"]):::domain1
+        UC06(["UC-06 Record Count via Voice"]):::domain1
+        UC07(["UC-07 Apply Quick-Count Preset"]):::domain1
+        UC08(["UC-08 Undo Last Count"]):::domain1
+        UC09(["UC-09 View Inventory Status"]):::domain1
+        UC10(["UC-10 Calculate Expected Balance"]):::incexd
+        UC11(["UC-11 Record Waste"]):::domain1
+        UC12(["UC-12 Count Composite Item"]):::domain1
+        UC13(["UC-13 Auto-Deduct Components"]):::incexd
+        UC14(["UC-14 Connect BLE Scale"]):::domain1
+        UC15(["UC-15 Read Weight from Scale"]):::incexd
+        UC16(["UC-16 Capture Arabic Voice"]):::incexd
+        UC17(["UC-17 Parse Spoken Weight"]):::incexd
     end
 
-    %% Actor to Use Case Associations
-    Patient --> UC_Auth
-    Patient --> UC_Book
-    Patient --> UC_ViewRecords
-    Patient --> UC_PayBill
+    %% ── Domain 2: Transfers, Audit & Reporting ──────────────────
+    subgraph D2 ["📋 Domain 2 · Transfers, Audit & Reporting"]
+        direction TB
+        UC19(["UC-19 Create Transfer\n(Butcher → Restaurant)"]):::domain2
+        UC20(["UC-20 Receive Transfer"]):::domain2
+        UC21(["UC-21 Cancel Pending Transfer"]):::domain2
+        UC22(["UC-22 View Pending Transfers"]):::domain2
+        UC24(["UC-24 Initiate Audit Session"]):::domain2
+        UC26(["UC-26 Finalise & Save Audit"]):::domain2
+        UC27(["UC-27 View Audit History"]):::domain2
+        UC29(["UC-29 Generate PDF Report"]):::domain2
+        UC30(["UC-30 Send Report via WhatsApp"]):::domain2
+        UC33(["UC-33 View Owner Analytics"]):::domain2
+    end
 
-    Doctor --> UC_Auth
-    Doctor --> UC_Consult
-    Doctor --> UC_Prescribe
-    Doctor --> UC_OrderLab
-    Doctor --> UC_ViewRecords
+    %% ── Domain 3: Owner Admin, Device & Data ────────────────────
+    subgraph D3 ["⚙️ Domain 3 · Owner Admin, Device & Data"]
+        direction TB
+        UC38(["UC-38 Authenticate Device"]):::domain3
+        UC39(["UC-39 Select Device Role"]):::domain3
+        UC45(["UC-45 Enter Owner PIN"]):::domain3
+        UC46(["UC-46 Manage Products"]):::domain3
+        UC47(["UC-47 Manage Recipe Components"]):::domain3
+        UC49(["UC-49 Import Products from Excel"]):::domain3
+        UC53(["UC-53 Set Role PINs"]):::domain3
+        UC54(["UC-54 Export JSON Backup"]):::domain3
+        UC55(["UC-55 Import & Restore Backup"]):::domain3
+        UC58(["UC-58 Change Theme"]):::domain3
+        UC42(["UC-42 Switch Branch"]):::domain3
+        UC43(["UC-43 View Device Presence"]):::domain3
+        UC44(["UC-44 Send Sync Ping"]):::domain3
+    end
 
-    Nurse --> UC_Auth
-    Nurse --> UC_Vitals
-    Nurse --> UC_ViewRecords
+    %% ── Butcher → Domain 1 ──────────────────────────────────────
+    Butcher --> UC01
+    Butcher --> UC03
+    Butcher --> UC04
+    Butcher --> UC05
+    Butcher --> UC06
+    Butcher --> UC07
+    Butcher --> UC11
+    Butcher --> UC12
+    Butcher --> UC14
 
-    Admin --> UC_Auth
-    Admin --> UC_ManageStaff
-    Admin --> UC_Analytics
-    Admin --> UC_Audit
+    %% ── Butcher → Domain 2 ──────────────────────────────────────
+    Butcher --> UC19
+    Butcher --> UC21
+    Butcher --> UC24
+    Butcher --> UC26
+    Butcher --> UC29
+    Butcher --> UC30
 
-    UC_InsuranceClaim --> InsuranceGW
+    %% ── Butcher → Domain 3 ──────────────────────────────────────
+    Butcher --> UC38
+    Butcher --> UC39
+    Butcher --> UC43
+    Butcher --> UC44
+
+    %% ── Restaurant → Domain 1 ───────────────────────────────────
+    Restaurant --> UC01
+    Restaurant --> UC03
+    Restaurant --> UC04
+    Restaurant --> UC05
+    Restaurant --> UC06
+    Restaurant --> UC07
+    Restaurant --> UC11
+    Restaurant --> UC14
+
+    %% ── Restaurant → Domain 2 ───────────────────────────────────
+    Restaurant --> UC20
+    Restaurant --> UC22
+    Restaurant --> UC24
+    Restaurant --> UC26
+    Restaurant --> UC29
+    Restaurant --> UC30
+
+    %% ── Restaurant → Domain 3 ──────────────────────────────────
+    Restaurant --> UC38
+    Restaurant --> UC39
+    Restaurant --> UC43
+    Restaurant --> UC44
+
+    %% ── Owner → Domains ─────────────────────────────────────────
+    Owner --> UC01
+    Owner --> UC09
+    Owner --> UC27
+    Owner --> UC29
+    Owner --> UC30
+    Owner --> UC33
+    Owner --> UC38
+    Owner --> UC39
+    Owner --> UC42
+    Owner --> UC43
+    Owner --> UC44
+    Owner --> UC45
+    Owner --> UC46
+    Owner --> UC47
+    Owner --> UC49
+    Owner --> UC53
+    Owner --> UC54
+    Owner --> UC55
+    Owner --> UC58
+
+    %% ── Secondary Actor Connections ─────────────────────────────
+    BLE --> UC15
+    UC30 --> WhatsApp
+    UC38 --> FireAuth
+    UC42 --> Firestore
+    UC26 -.->|"«include» sync"| Firestore
+    UC19 -.->|"«include» sync"| Firestore
+
+    %% ── Key include/extend annotations ─────────────────────────
+    UC05 -.-|"«include»"| UC15
+    UC06 -.-|"«include»"| UC16
+    UC12 -.-|"«include»"| UC13
+    UC04 -.-|"«include»"| UC10
+    UC07 -.-|"«extend»"| UC04
+    UC08 -.-|"«extend»"| UC04

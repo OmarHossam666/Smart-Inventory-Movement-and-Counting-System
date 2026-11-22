@@ -1,0 +1,139 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 4 — Activity Diagram (Workflow 5): Offline Cloud Sync & Conflict Resolution
+' Sources: src/data/firebaseInventorySync.ts, src/storage/repository.ts, src/models.ts
+' UML 2.5 Strict Swimlane Activity Diagram
+
+title Smart Inventory — Activity Diagram\nWorkflow 5: Offline Cloud Synchronization & Domain Conflict Resolution
+
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam activity {
+    BackgroundColor #EFF6FF
+    BorderColor #2563EB
+    BorderThickness 1.3
+    FontColor #1E3A8A
+    FontSize 11
+}
+
+skinparam activityDiamond {
+    BackgroundColor #FEF3C7
+    BorderColor #D97706
+    FontColor #78350F
+    FontSize 10
+}
+
+skinparam swimlane {
+    BorderColor #64748B
+    BorderThickness 1.5
+    TitleBackgroundColor #F8FAFC
+    TitleFontColor #0F172A
+    TitleFontSize 12
+    TitleFontStyle bold
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+|#F8FAFC|Network Poller (SyncEngine)|
+|#F1F5F9|Local Storage & Write Queue|
+|#F8FAFC|Conflict Resolution Engine|
+|#F1F5F9|Firestore Remote Database|
+
+|Network Poller (SyncEngine)|
+start
+:Detect network connectivity change
+(window 'online' event fired or 12s heartbeat tick);
+:Ping Firestore endpoint;
+
+if (Firestore reachable and authenticated?) then ([yes: isOnline = true])
+    |Local Storage & Write Queue|
+    :Query pending mutations write queue
+    from local repository;
+    
+    if (Pending mutations exist in queue?) then ([yes: queue.length > 0])
+        :Fetch list of affected document keys
+        (e.g., counts, transfers, rolePins, audits);
+        
+        |Firestore Remote Database|
+        :Fetch latest remote document snapshot
+        for each key via getDoc();
+        
+        |Conflict Resolution Engine|
+        repeat
+            :Inspect next document key and payload;
+            
+            if (Remote doc was modified concurrently during offline period?) then ([yes: conflict detected])
+                :Route to Domain-Specific Merge Handler;
+                
+                if (Document Key Type?) then (["counts"])
+                    :Execute Last-Write-Wins (LWW) per item:
+                    compare item mutation timestamps;
+                    :Merge remote and local item maps,
+                    retaining newest timestamp per item;
+                    
+                elseif (Document Key Type?) then (["transfers"])
+                    :Execute State Precedence Rule:
+                    * Terminal states (Received, Discrepancy, Cancelled)
+                      permanently override pending 'Sent';
+                    * Sent quantities preserved;
+                    * Line dispute records merged;
+                    
+                elseif (Document Key Type?) then (["rolePins"])
+                    :Compare owner update timestamp;
+                    :Retain newest PIN configuration;
+                    
+                else (["audits" or default])
+                    :Execute Set Union by UUID:
+                    combine audit record sets
+                    without overwriting existing IDs;
+                endif
+                
+                :Produce resolved canonical document payload;
+                
+            else ([no: no concurrent edit])
+                :Use local mutation payload directly;
+            endif
+            
+            |Firestore Remote Database|
+            :Write resolved document to
+            branches/{branchId}/keys/{key} in atomic batch;
+            
+            |Local Storage & Write Queue|
+            :Update local database record
+            with resolved canonical data;
+            :Remove processed mutation from pending queue;
+            
+        repeat while (More pending keys in queue?) is ([yes])
+        -> ([no]);
+        
+        |Network Poller (SyncEngine)|
+        :Update UI sync indicator badge:
+        transition to "Synced / متزامن" (أخضر);
+        :Notify reactive UI listeners to refresh views;
+        
+    else ([no pending mutations])
+        |Network Poller (SyncEngine)|
+        :Write 12s device heartbeat to
+        branches/{branchId}/presence/{deviceId};
+        :Set sync pill to "Synced / متزامن";
+    endif
+
+else ([no: offline or connection timeout])
+    |Network Poller (SyncEngine)|
+    :Update UI sync indicator badge:
+    transition to "Offline / غير متصل" (رمادي);
+    :Retain all mutations in local write queue;
+    :Schedule exponential backoff retry timer
+    (min 2s, max 30s);
+endif
+
+stop
+@enduml

@@ -1,0 +1,50 @@
+%% Smart Inventory Movement & Counting System
+%% Deliverable 8 — State Machine Diagram (Mermaid Companion — Core Entity Lifecycles)
+%% Sources: src/models.ts, src/data/*
+
+stateDiagram-v2
+    classDef initial fill:#1E293B,stroke:#0F172A,color:#FFFFFF,font-weight:700
+    classDef normal fill:#EFF6FF,stroke:#2563EB,color:#1E3A8A
+    classDef pending fill:#FEF3C7,stroke:#D97706,color:#78350F
+    classDef terminalSuccess fill:#F0FDF4,stroke:#16A34A,color:#14532D
+    classDef terminalError fill:#FEF2F2,stroke:#DC2626,color:#991B1B
+
+    %% ── Transfer Entity Lifecycle ────────────────────────────────
+    state "📦 Transfer Entity Lifecycle" as TransferFlow {
+        [*] --> Draft:::normal
+        Draft --> Sent:::pending : dispatchTransfer()
+        Sent --> Cancelled:::terminalError : cancelTransfer() [by Butcher]
+        Sent --> InTransit:::normal : openAtRestaurant()
+        InTransit --> Received:::terminalSuccess : confirmReceipt() [weights match]
+        InTransit --> Discrepancy:::terminalError : flagDiscrepancy() [mismatch > 1%]
+        Cancelled --> [*]
+        Received --> [*]
+        Discrepancy --> [*]
+    }
+
+    %% ── Shift & Audit Session Lifecycle ─────────────────────────
+    state "📋 Shift & Audit Lifecycle" as ShiftFlow {
+        [*] --> Uninitialized:::normal
+        Uninitialized --> Counting:::normal : startShift()
+        Counting --> Counting : recordCount() / undo()
+        Counting --> Reviewing:::pending : initiateAuditFinalization()
+        Reviewing --> Counting : resumeCounting()
+        Reviewing --> PinChallenge:::pending : clickCommitAudit()
+        PinChallenge --> PinLockout:::terminalError : invalidPin (>= 3 fails)
+        PinLockout --> PinChallenge : lockoutExpired (30s)
+        PinChallenge --> ArchivedAudit:::terminalSuccess : validPin [Owner]
+        ArchivedAudit --> [*] : closeShift()
+    }
+
+    %% ── Cloud Sync Engine Lifecycle ─────────────────────────────
+    state "🔄 Cloud Sync Engine Lifecycle" as SyncFlow {
+        [*] --> OnlineSynced:::terminalSuccess
+        OnlineSynced --> OnlinePending:::pending : localMutation()
+        OnlinePending --> OnlineSynced:::terminalSuccess : debounceExpired (250ms)
+        OnlineSynced --> Offline:::normal : networkLost()
+        OnlinePending --> Offline:::normal : networkLost()
+        Offline --> Reconnecting:::pending : networkRestored()
+        Reconnecting --> OnlineSynced:::terminalSuccess : pingSuccess [queue empty]
+        Reconnecting --> ResolvingConflict:::pending : pingSuccess [queue > 0]
+        ResolvingConflict --> OnlineSynced:::terminalSuccess : mergeComplete()
+    }

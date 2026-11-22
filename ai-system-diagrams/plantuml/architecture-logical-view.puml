@@ -1,0 +1,130 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 7 — Architecture View 1: Logical Subsystem Architecture
+' Sources: src/*, docs/storage-architecture.md
+' UML 2.5 Strict Component & Subsystem Architecture
+
+title Smart Inventory — Logical Architecture View (Layered Subsystems & Interfaces)
+
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+skinparam componentStyle uml2
+
+skinparam package {
+    BackgroundColor #FFFFFF
+    BorderColor #64748B
+    BorderThickness 1.5
+    FontColor #0F172A
+    FontSize 12
+    FontStyle bold
+}
+
+skinparam component {
+    BackgroundColor #F8FAFC
+    BorderColor #334155
+    BorderThickness 1.2
+    FontColor #0F172A
+    FontSize 11
+}
+
+skinparam interface {
+    BackgroundColor #EFF6FF
+    BorderColor #2563EB
+    FontColor #1E3A8A
+    FontSize 10
+}
+
+' ─── Layer 1: Presentation & UI Subsystem ───────────────────────
+package "Presentation Subsystem (src/App.tsx, src/*.tsx)" {
+    component [App State Coordinator\n(App.tsx)] as AppCoord
+    component [Shift Setup View\n(ShiftSetup.tsx)] as ShiftView
+    component [Inventory Counting View\n(Virtual Keypad & Presets)] as CountView
+    component [Transfers Management View\n(Inbound/Outbound Manifests)] as TransView
+    component [Audit Review View\n(Variance & Discrepancies)] as AuditView
+    component [Audit History & Detail\n(AuditHistory.tsx)] as HistoryView
+    component [Owner Analytics View\n(OwnerAnalytics.tsx)] as AnalyticsView
+    component [Device Connect & QR View\n(DeviceConnectModal.tsx)] as DeviceView
+    component [Data Backup View\n(DataBackup.tsx)] as BackupView
+    component [BLE Pairing Modal\n(ScaleConnection.tsx)] as BleView
+    component [Mascot Companion\n(MascotCompanion.tsx)] as MascotView
+    component [App Error Boundary\n(AppErrorBoundary.tsx)] as ErrorBoundary
+}
+
+' ─── Layer 2: Application & Domain Feature Processing ───────────
+package "Domain Feature Subsystem (src/features/*, src/inventoryCatalog.ts)" {
+    interface "IBleScale" as IBle
+    interface "ISpeechRecognition" as ISpeech
+    interface "ICompositeCalculator" as IComposite
+    interface "IStatusEvaluator" as IStatus
+    interface "IProductImport" as IImport
+    interface "IPdfDelivery" as IPdf
+
+    component [BLE Scale Client\n(bleScale.ts)] as BleFeature
+    component [Arabic Voice Engine\n(speechRecognition.ts)] as SpeechFeature
+    component [Composite Recipe Engine\n(compositeInventory.ts)] as CompositeFeature
+    component [Inventory Status Evaluator\n(inventoryStatus.ts)] as StatusFeature
+    component [Catalog Seed & Math\n(inventoryCatalog.ts)] as CatalogFeature
+    component [Excel Product Importer\n(productImport.ts)] as ImportFeature
+    component [PDF & WhatsApp Delivery\n(pdfDelivery.ts, PdfReport.tsx)] as PdfFeature
+
+    BleFeature -up- IBle
+    SpeechFeature -up- ISpeech
+    CompositeFeature -up- IComposite
+    StatusFeature -up- IStatus
+    ImportFeature -up- IImport
+    PdfFeature -up- IPdf
+}
+
+' ─── Layer 3: Service Facade & Business Orchestration ───────────
+package "Service Orchestration Subsystem (src/data/*)" {
+    interface "IInventoryDataService" as IDataService
+    interface "IFirebaseSync" as ISync
+    interface "IStoreAuth" as IAuth
+
+    component [InventoryDataService\n(inventoryDataService.ts)] as DataService
+    component [FirebaseInventorySync\n(firebaseInventorySync.ts)] as SyncService
+    component [StoreAuthService\n(authService.ts)] as AuthService
+
+    DataService -up- IDataService
+    SyncService -up- ISync
+    AuthService -up- IAuth
+}
+
+' ─── Layer 4: Storage & Persistence Subsystem ────────────────────
+package "Storage Subsystem (src/storage/*)" {
+    interface "IStorageRepository" as IRepo
+
+    component [InventoryStorage\n(Cache & Queue Facade)] as StorageFacade
+    component [IndexedDbRepository\n(Web Browser Engine)] as IdbRepo
+    component [AndroidSqliteRepository\n(Capacitor SQLite Engine)] as SqliteRepo
+
+    IdbRepo -up- IRepo
+    SqliteRepo -up- IRepo
+    StorageFacade o-- IRepo : delegates to
+}
+
+' ─── Layer 5: Domain Models ──────────────────────────────────────
+package "Domain Models (src/models.ts)" {
+    component [Core Domain Entities\n(Item, Transfer, AuditRecord, StockMovement)] as Models
+}
+
+' Inter-Subsystem Relationships
+AppCoord ..> IBle : consumes
+AppCoord ..> ISpeech : consumes
+AppCoord ..> IComposite : invokes
+AppCoord ..> IStatus : evaluates
+AppCoord ..> IImport : imports via
+AppCoord ..> IPdf : exports via
+AppCoord --> IDataService : commands
+
+DataService --> StorageFacade : persists locally
+DataService --> ISync : syncs to cloud
+SyncService ..> IAuth : uses credentials
+
+DataService ..> Models : manages
+StorageFacade ..> Models : serializes
+AppCoord ..> Models : renders
+
+@enduml

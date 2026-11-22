@@ -1,0 +1,87 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 8 — State Machine Diagram 1: Transfer Entity Lifecycle
+' Sources: src/models.ts, src/data/inventoryDataService.ts, src/data/firebaseInventorySync.ts
+' UML 2.5 Strict State Machine Diagram with Composite States, Guards, Actions & Transitions
+
+title Smart Inventory — State Machine Diagram\nLifecycle 1: Inter-Location Transfer Entity (TransferStatus)
+
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam state {
+    BackgroundColor #F8FAFC
+    BorderColor #334155
+    BorderThickness 1.2
+    FontColor #0F172A
+    FontSize 11
+    FontStyle bold
+    ArrowColor #1E293B
+    ArrowThickness 1.1
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+[*] --> Draft : createTransferManifest()\n/ initTransferLines()
+
+state Draft #EFF6FF {
+    Draft : entry / renderManifestEditor()
+    Draft : do / addItem(item, sentWeight, notes)
+    Draft : exit / validateTotalWeight()
+}
+
+Draft --> Sent : dispatchTransfer() [lines.length > 0 && sentWeight > 0]\n/ assignUUID(); setStatus("Sent");\nreserveStockInButcherLedger();\nwriteToFirestore("transfers/{id}")
+
+state Sent #FEF3C7 {
+    Sent : entry / broadcastRealtimeEvent()\nstartInboundAlerts()
+    Sent : do / awaitDeliveryAtRestaurant()
+}
+
+Sent --> Cancelled : cancelTransfer() [status == "Sent"]\n/ revertReservedStockInButcherLedger();\nupdateFirestoreStatus("Cancelled")
+
+state Cancelled #F1F5F9 {
+    Cancelled : entry / notifyReceiverOfRevocation()\nlogCancellationEvent()
+    Cancelled : do / immutableArchive()
+}
+
+state InTransitInspection #EFF6FF {
+    InTransitInspection : entry / inspectPhysicalDelivery()\nweighIncomingCutsOnKitchenScale()
+    InTransitInspection : do / inputReceivedWeights()
+}
+
+Sent --> InTransitInspection : openPendingTransfer()\n/ displayManifestDetails()
+
+InTransitInspection --> Received : confirmReceipt() [|receivedWeight - sentWeight| <= 0.01 * sentWeight]\n/ setStatus("Received");\ncreditRestaurantStock(verifiedWeight);\nreconcileButcherLedger();\nupdateFirestoreStatus("Received")
+
+state Received #F0FDF4 {
+    Received : entry / notifyButcherOfSuccess()\narchiveCompletedTransfer()
+    Received : do / immutableLedgerRecord()
+}
+
+InTransitInspection --> Discrepancy : flagDiscrepancy() [|receivedWeight - sentWeight| > 0.01 * sentWeight]\n/ setStatus("Discrepancy");\nrequireDisputeReason(reasonCode);\ncreditRestaurantStock(actualReceivedWeight);\nlogDeficitShrinkageAgainstButcher(deltaWeight);\nupdateFirestoreStatus("Discrepancy");\nalertOwnerAnalytics()
+
+state Discrepancy #FEF2F2 {
+    Discrepancy : entry / surfaceHighPriorityOwnerAlert()\nflagVarianceLinesInRed()
+    Discrepancy : do / immutableDisputeArchive()
+}
+
+Cancelled --> [*]
+Received --> [*]
+Discrepancy --> [*]
+
+note right of Discrepancy
+  Terminal dispute codes:
+  * scale_difference (فرق ميزان)
+  * transit_spill (تلف / انسكاب أثناء النقل)
+  * short_delivered (نقص في التسليم)
+  * rejected (رفض الصنف)
+end note
+
+@enduml

@@ -1,126 +1,244 @@
-%% MedPulse Hospital Management System - Domain Class Diagram
-%% Generated with AI for Advanced Software Engineering
-%% Native Mermaid classDiagram with inheritance, aggregation, composition, and multiplicities.
+%% Smart Inventory Movement & Counting System
+%% Deliverable 5 — Class Diagram (Mermaid Companion)
+%% Sources: src/models.ts, src/storage/repository.ts, src/data/*, src/features/*, src/App.tsx
 
 classDiagram
-    direction TB
+    direction LR
 
-    class User {
-        <<abstract>>
-        #String id
-        #String fullName
-        #String email
-        #String phoneNumber
-        #String passwordHash
-        +authenticate(String password) bool
-        +updateContact(String email, String phone) void
+    %% ── Enums ───────────────────────────────────────────────────
+    class DeviceRole {
+        <<enumeration>>
+        owner
+        butcher
+        restaurant
     }
 
-    class Patient {
-        -String bloodGroup
-        -Date dateOfBirth
-        -String emergencyContact
-        -String insurancePolicyNo
-        +getMedicalHistory() List~MedicalRecord~
-        +requestAppointment(Doctor doctor, DateTime slot) Appointment
+    class InventoryLocation {
+        <<enumeration>>
+        butcher
+        restaurant
     }
 
-    class Staff {
-        <<abstract>>
-        #String employeeId
-        #Date hireDate
-        #Department department
-        +getAssignedShift() String
+    class TransferStatus {
+        <<enumeration>>
+        Sent
+        Received
+        Discrepancy
+        Cancelled
     }
 
-    class Doctor {
-        -String medicalLicenseNo
-        -String specialization
-        -Decimal consultationFee
-        +conductConsultation(Patient patient) MedicalRecord
-        +issuePrescription(MedicalRecord record, List~PrescriptionItem~ items) Prescription
-        +orderLabTest(MedicalRecord record, String testName) void
+    class StockMovementType {
+        <<enumeration>>
+        count
+        auto_deduct
+        waste
+        transfer
     }
 
-    class Nurse {
-        -String nursingLicenseNo
-        -ShiftType shiftType
-        +logVitals(Patient patient, float temp, String bp, int hr) void
+    %% ── Domain Entities ─────────────────────────────────────────
+    class Category {
+        +String id
+        +String nameAr
+        +String slug
+        +String icon
+        +Number sortOrder
     }
 
-    class Department {
-        -String code
-        -String name
-        -Doctor headDoctor
-        -int floorNumber
-        +listActiveDoctors() List~Doctor~
+    class RecipeComponent {
+        +String rawItemId
+        +Number quantity
+        +String unit
     }
 
-    class Appointment {
-        -String appointmentId
-        -DateTime scheduledTime
-        -AppointmentStatus status
-        -VisitType visitType
-        +reschedule(DateTime newSlot) bool
-        +markCompleted() void
-        +cancel(String reason) void
+    class Item {
+        +String id
+        +String categoryId
+        +String nameAr
+        +String baseUnit
+        +String entryUnit
+        +Number unitMultiplier
+        +Number toleranceThresholdPercent
+        +Number minStockAlert
+        +Number costPerBaseUnit
+        +Boolean isComposite
+        +getExpectedStock() Number
     }
 
-    class MedicalRecord {
-        -String recordId
-        -DateTime recordedAt
-        -String chiefComplaint
-        -String diagnosis
-        -String clinicalNotes
-        +attachPrescription(Prescription prescription) void
-        +generateInvoice() Invoice
+    class StockMovement {
+        +String id
+        +String itemId
+        +StockMovementType movementType
+        +Number quantity
+        +InventoryLocation sourceLocation
+        +InventoryLocation destinationLocation
+        +String referenceId
+        +String reason
+        +String createdAt
+        +DeviceRole createdByRole
     }
 
-    class Prescription {
-        -String rxNumber
-        -Date issuedDate
-        -Date expirationDate
-        -int refillCount
-        +addItem(PrescriptionItem item) void
-        +isDispensed() bool
+    class TransferLine {
+        +String itemId
+        +Number sentQuantity
+        +Number receivedQuantity
+        +String notes
+        +calculateVariance() Number
     }
 
-    class PrescriptionItem {
-        -String medicationName
-        -String dosage
-        -String frequency
-        -int durationDays
-        +getInstructions() String
+    class Transfer {
+        +String id
+        +InventoryLocation fromLocation
+        +InventoryLocation toLocation
+        +TransferStatus status
+        +String discrepancyReason
+        +String notes
+        +String createdAt
+        +DeviceRole createdBy
+        +isTerminal() Boolean
     }
 
-    class Invoice {
-        -String invoiceNumber
-        -Decimal totalAmount
-        -Decimal insuranceCovered
-        -Decimal patientPayable
-        -PaymentStatus status
-        +processPayment(String gatewayToken) bool
-        +submitInsuranceClaim() bool
+    class AuditLine {
+        +String itemId
+        +Number expectedQuantity
+        +Number actualQuantity
+        +Number varianceQuantity
+        +String status
     }
 
-    %% Inheritance relationships
-    User <|-- Patient : generalizes
-    User <|-- Staff : generalizes
-    Staff <|-- Doctor : specializes
-    Staff <|-- Nurse : specializes
+    class AuditRecord {
+        +String id
+        +String date
+        +String shiftType
+        +InventoryLocation location
+        +String branchId
+        +Number totalItems
+        +Number matchedCount
+        +Number toleranceCount
+        +Number shortageCount
+        +Number totalVarianceKg
+        +DeviceRole committedBy
+    }
 
-    %% Aggregation: Department employs Doctors
-    Department "1" o-- "1..*" Doctor : employs
+    %% ── Storage Architecture ────────────────────────────────────
+    class StorageRepository {
+        <<interface>>
+        +get(key) Promise
+        +set(key, value) Promise
+        +remove(key) Promise
+        +clear() Promise
+        +keys() Promise
+    }
 
-    %% Associations with Multiplicities
-    Patient "1" --> "0..*" Appointment : books
-    Doctor "1" --> "0..*" Appointment : attends
-    Appointment "0..1" --> "1" MedicalRecord : documents
+    class IndexedDbRepository {
+        -String dbName
+        -String storeName
+        +get(key) Promise
+        +set(key, value) Promise
+        +remove(key) Promise
+    }
 
-    %% Composition (Strong Ownership)
-    MedicalRecord "1" *-- "0..*" Prescription : contains
-    Prescription "1" *-- "1..*" PrescriptionItem : specifies
+    class AndroidSqliteRepository {
+        -SQLiteConnection sqlite
+        -SQLiteDBConnection db
+        +get(key) Promise
+        +set(key, value) Promise
+        +remove(key) Promise
+    }
 
-    %% Invoicing associations
-    MedicalRecord "1" --> "1" Invoice : bills
-    Patient "1" --> "0..*" Invoice : responsible for
+    class InventoryStorage {
+        -StorageRepository repo
+        -Map cache
+        +initialize() Promise
+        +getItem(key) Promise
+        +setItem(key, value) Promise
+    }
+
+    %% ── Service Facade & Cloud Sync ─────────────────────────────
+    class InventoryDataService {
+        -InventoryStorage storage
+        -FirebaseInventorySync syncService
+        +getCategories() Promise
+        +getItems() Promise
+        +saveCount(itemId, count) Promise
+        +createTransfer(from, to, lines) Promise
+        +receiveTransfer(id, lines, notes) Promise
+        +saveAuditRecord(audit) Promise
+        +exportBackupJson() Promise
+        +importBackupJson(json) Promise
+    }
+
+    class FirebaseInventorySync {
+        -Firestore db
+        -String branchId
+        +initialize(branchId) Promise
+        +subscribeToKey(key, cb) Function
+        +syncKey(key, data) void
+        +updatePresence(role, deviceId) Promise
+        +resolveConflict(key, local, remote) Any
+    }
+
+    %% ── Hardware & Feature Processors ───────────────────────────
+    class BleScaleClient {
+        -String deviceId
+        -Boolean isConnected
+        +scanAndConnect() Promise
+        +startWeightStream(cb) Promise
+        +stopWeightStream() Promise
+    }
+
+    class SpeechRecognitionEngine {
+        -SpeechRecognition recognition
+        +startListening(onRes, onErr) void
+        +parseArabicSpeech(text, catalog) Any
+    }
+
+    class CompositeInventoryCalculator {
+        +autoDeductComponents(dishId, qty, items, stock) List
+        +validateRecipe(components, items) Boolean
+    }
+
+    class InventoryStatusEvaluator {
+        +calculateVariance(actual, expected) Number
+        +evaluateStatus(variance, threshold, expected) String
+    }
+
+    class PdfReportGenerator {
+        +renderCanvasReport(audit, items) Promise
+        +exportToPdf(canvases) Promise
+        +sharePdfViaWhatsApp(pdfBlob, text) Promise
+    }
+
+    %% ── Presentation Controller ─────────────────────────────────
+    class AppController {
+        +DeviceRole activeRole
+        +InventoryLocation currentLocation
+        +Map counts
+        +List transfers
+        +handleCountSubmit(itemId, val) void
+        +handleUndo() void
+        +handleTransferCreate(lines) void
+        +handleAuditCommit() void
+    }
+
+    %% ── Relationships ───────────────────────────────────────────
+    Category "1" *-- "0..*" Item : categorizes
+    Item "1" *-- "0..*" RecipeComponent : composed_of
+    Transfer "1" *-- "1..*" TransferLine : contains
+    AuditRecord "1" *-- "1..*" AuditLine : contains
+    Item "1" <-- "0..*" StockMovement : tracks
+    Item "1" <-- "0..*" TransferLine : transfers
+    Item "1" <-- "0..*" AuditLine : audits
+
+    IndexedDbRepository ..|> StorageRepository
+    AndroidSqliteRepository ..|> StorageRepository
+    InventoryStorage o-- StorageRepository : delegates_to
+
+    InventoryDataService o-- InventoryStorage : uses
+    InventoryDataService o-- FirebaseInventorySync : syncs_via
+
+    AppController --> InventoryDataService : invokes
+    AppController ..> BleScaleClient : consumes
+    AppController ..> SpeechRecognitionEngine : consumes
+    AppController ..> CompositeInventoryCalculator : invokes
+    AppController ..> InventoryStatusEvaluator : evaluates_with
+    AppController ..> PdfReportGenerator : exports_via

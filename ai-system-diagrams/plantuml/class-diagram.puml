@@ -1,158 +1,392 @@
 @startuml
-' MedPulse Hospital Management System - Domain Class Diagram
-' Generated with AI for Advanced Software Engineering
-title MedPulse Smart Hospital - Domain Class Diagram
+' Smart Inventory Movement & Counting System
+' Deliverable 5 — Class Diagram (Domain, Services, Storage, Features, UI)
+' Sources: src/models.ts, src/storage/repository.ts, src/data/*, src/features/*, src/App.tsx
+' UML 2.5 Strict Class Diagram with Visibility, Types, Multiplicities & Packages
 
+title Smart Inventory — Domain & Architecture Class Diagram
+
+left to right direction
 skinparam classAttributeIconSize 0
-skinparam roundcorner 6
 skinparam shadowing false
+skinparam roundcorner 8
 skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
 skinparam defaultFontSize 11
-skinparam classFontSize 12
+skinparam classFontSize 11
 skinparam classFontStyle bold
 
-' Clean slate & corporate blue palette
+skinparam package {
+    BackgroundColor #FFFFFF
+    BorderColor #64748B
+    BorderThickness 1.5
+    FontColor #0F172A
+    FontSize 12
+    FontStyle bold
+}
+
 skinparam class {
     BackgroundColor #FFFFFF
     BorderColor #334155
     BorderThickness 1.2
+    FontColor #0F172A
     ArrowColor #1E293B
     ArrowThickness 1.1
 }
 
-abstract class User {
-    # id: String
-    # fullName: String
-    # email: String
-    # phoneNumber: String
-    # passwordHash: String
-    + authenticate(password: String): Boolean
-    + updateContact(email: String, phone: String): void
+' ─── Package 1: Domain Entities & Values ─────────────────────────
+package "Domain Models (src/models.ts)" {
+
+    enum DeviceRole <<enumeration>> {
+        owner
+        butcher
+        restaurant
+    }
+
+    enum InventoryLocation <<enumeration>> {
+        butcher
+        restaurant
+    }
+
+    enum TransferStatus <<enumeration>> {
+        Sent
+        Received
+        Discrepancy
+        Cancelled
+    }
+
+    enum StockMovementType <<enumeration>> {
+        count
+        auto_deduct
+        waste
+        transfer
+    }
+
+    enum ShiftType <<enumeration>> {
+        morning
+        evening
+        night
+    }
+
+    class Category {
+        + id: String
+        + nameAr: String
+        + slug: String
+        + icon: String
+        + sortOrder: Number
+    }
+
+    class RecipeComponent {
+        + rawItemId: String
+        + quantity: Number
+        + unit: String
+    }
+
+    class Item {
+        + id: String
+        + categoryId: String
+        + nameAr: String
+        + baseUnit: String
+        + entryUnit: String
+        + unitMultiplier: Number
+        + toleranceThresholdPercent: Number
+        + minStockAlert: Number
+        + costPerBaseUnit: Number
+        + isComposite: Boolean
+        + notes: String
+        + getExpectedStock(): Number
+    }
+
+    class StockMovement {
+        + id: String
+        + itemId: String
+        + movementType: StockMovementType
+        + quantity: Number
+        + sourceLocation: InventoryLocation
+        + destinationLocation: InventoryLocation
+        + referenceId: String
+        + reason: String
+        + notes: String
+        + createdAt: String
+        + createdByRole: DeviceRole
+    }
+
+    class TransferLine {
+        + itemId: String
+        + sentQuantity: Number
+        + receivedQuantity: Number
+        + notes: String
+        + calculateVariance(): Number
+    }
+
+    class Transfer {
+        + id: String
+        + fromLocation: InventoryLocation
+        + toLocation: InventoryLocation
+        + status: TransferStatus
+        + discrepancyReason: String
+        + notes: String
+        + recipientNotes: String
+        + createdAt: String
+        + receivedAt: String
+        + createdBy: DeviceRole
+        + receivedBy: DeviceRole
+        + isTerminal(): Boolean
+    }
+
+    class AuditLine {
+        + itemId: String
+        + expectedQuantity: Number
+        + actualQuantity: Number
+        + varianceQuantity: Number
+        + status: String
+        + notes: String
+    }
+
+    class AuditRecord {
+        + id: String
+        + date: String
+        + shiftType: ShiftType
+        + location: InventoryLocation
+        + branchId: String
+        + totalItems: Number
+        + matchedCount: Number
+        + toleranceCount: Number
+        + shortageCount: Number
+        + totalVarianceKg: Number
+        + committedBy: DeviceRole
+        + committedAt: String
+    }
+
+    class ShiftInfo {
+        + date: String
+        + shiftType: ShiftType
+        + branchId: String
+        + startedAt: String
+    }
 }
 
-class Patient {
-    - bloodGroup: String
-    - dateOfBirth: Date
-    - emergencyContact: String
-    - insurancePolicyNo: String
-    + getMedicalHistory(): List<MedicalRecord>
-    + requestAppointment(doctor: Doctor, slot: DateTime): Appointment
+' Domain Internal Relationships
+Category "1" *-- "0..*" Item : categorizes >
+Item "1" *-- "0..*" RecipeComponent : composed_of >
+Transfer "1" *-- "1..*" TransferLine : contains >
+AuditRecord "1" *-- "1..*" AuditLine : contains >
+Item "1" <-- "0..*" StockMovement : tracks >
+Item "1" <-- "0..*" TransferLine : transfers >
+Item "1" <-- "0..*" AuditLine : audits >
+
+' ─── Package 2: Storage & Persistence Architecture ──────────────
+package "Storage Architecture (src/storage/)" {
+
+    interface StorageRepository <<interface>> {
+        + get(key: String): Promise<T>
+        + set(key: String, value: T): Promise<void>
+        + remove(key: String): Promise<void>
+        + clear(): Promise<void>
+        + keys(): Promise<String[]>
+    }
+
+    class IndexedDbRepository {
+        - dbName: String
+        - storeName: String
+        - dbPromise: Promise<IDBDatabase>
+        + get(key: String): Promise<T>
+        + set(key: String, value: T): Promise<void>
+        + remove(key: String): Promise<void>
+        + clear(): Promise<void>
+        + keys(): Promise<String[]>
+    }
+
+    class AndroidSqliteRepository {
+        - sqlite: SQLiteConnection
+        - db: SQLiteDBConnection
+        + get(key: String): Promise<T>
+        + set(key: String, value: T): Promise<void>
+        + remove(key: String): Promise<void>
+        + clear(): Promise<void>
+        + keys(): Promise<String[]>
+    }
+
+    class InventoryStorage {
+        - repo: StorageRepository
+        - cache: Map<String, Any>
+        - writeQueue: Promise<void>
+        + initialize(): Promise<void>
+        + getItem(key: String): Promise<T>
+        + setItem(key: String, value: T): Promise<void>
+        + removeItem(key: String): Promise<void>
+    }
+
+    IndexedDbRepository ..|> StorageRepository
+    AndroidSqliteRepository ..|> StorageRepository
+    InventoryStorage o-- StorageRepository : delegates_to >
 }
 
-abstract class Staff {
-    # employeeId: String
-    # hireDate: Date
-    # department: Department
-    + getAssignedShift(): String
+' ─── Package 3: Service Facade & Data Management ─────────────────
+package "Data Services (src/data/)" {
+
+    class InventoryDataService <<singleton>> {
+        - storage: InventoryStorage
+        - syncService: FirebaseInventorySync
+        + getCategories(): Promise<Category[]>
+        + getItems(): Promise<Item[]>
+        + saveItem(item: Item): Promise<void>
+        + deleteItem(itemId: String): Promise<void>
+        + getCounts(shiftId: String): Promise<Map<String, Number>>
+        + saveCount(itemId: String, count: Number): Promise<void>
+        + recordWaste(itemId: String, qty: Number, reason: String): Promise<void>
+        + createTransfer(fromLoc: InventoryLocation, toLoc: InventoryLocation, lines: TransferLine[]): Promise<Transfer>
+        + receiveTransfer(id: String, lines: TransferLine[], notes: String): Promise<Transfer>
+        + cancelTransfer(id: String): Promise<Transfer>
+        + saveAuditRecord(audit: AuditRecord): Promise<void>
+        + getAuditHistory(): Promise<AuditRecord[]>
+        + exportBackupJson(): Promise<String>
+        + importBackupJson(jsonStr: String): Promise<Boolean>
+    }
+
+    InventoryDataService o-- InventoryStorage : uses >
 }
 
-class Doctor {
-    - medicalLicenseNo: String
-    - specialization: String
-    - consultationFee: Decimal
-    + conductConsultation(patient: Patient): MedicalRecord
-    + issuePrescription(record: MedicalRecord, items: List<PrescriptionItem>): Prescription
-    + orderLabTest(record: MedicalRecord, testName: String): void
+' ─── Package 4: Cloud Sync & Authentication ─────────────────────
+package "Cloud Synchronization (src/data/firebase*)" {
+
+    class StoreAuthService {
+        - auth: FirebaseAuth
+        + signInAnonymously(): Promise<UserCredential>
+        + signInWithBranch(branchId: String, pin: String): Promise<UserCredential>
+        + getCurrentBranchId(): String
+        + setBranchId(branchId: String): void
+    }
+
+    class FirebaseInventorySync {
+        - db: Firestore
+        - branchId: String
+        - debounceTimer: Number
+        - pendingBatch: Map<String, Any>
+        - heartbeatTimer: Number
+        + initialize(branchId: String): Promise<void>
+        + subscribeToKey(key: String, callback: Function): Function
+        + syncKey(key: String, data: Any): void
+        + updatePresence(role: DeviceRole, deviceId: String): Promise<void>
+        + pingDevice(targetDeviceId: String): Promise<Number>
+        + resolveConflict(key: String, localData: Any, remoteData: Any): Any
+        - mergeCounts(local: Map, remote: Map): Map
+        - mergeTransfers(local: List, remote: List): List
+    }
+
+    InventoryDataService o-- FirebaseInventorySync : synchronizes_via >
 }
 
-class Nurse {
-    - nursingLicenseNo: String
-    - shiftType: ShiftType
-    + logVitals(patient: Patient, temp: Float, bp: String, hr: Int): void
+' ─── Package 5: Hardware & Feature Processing ────────────────────
+package "Features & Hardware (src/features/)" {
+
+    class BleScaleClient {
+        - deviceId: String
+        - isConnected: Boolean
+        - weightCharacteristic: Any
+        + scanAndConnect(): Promise<Boolean>
+        + disconnect(): Promise<void>
+        + startWeightStream(callback: Function): Promise<void>
+        + stopWeightStream(): Promise<void>
+        - parseGattWeight(dataView: DataView): Number
+    }
+
+    class SpeechRecognitionEngine {
+        - recognition: SpeechRecognition
+        - isListening: Boolean
+        + startListening(onResult: Function, onError: Function): void
+        + stopListening(): void
+        + parseArabicSpeech(transcript: String, catalog: List): Any
+        - normalizeArabicText(text: String): String
+        - parseArabicNumerals(words: String): Number
+    }
+
+    class CompositeInventoryCalculator {
+        + autoDeductComponents(dishId: String, countQty: Number, items: List, stock: Map): List<StockMovement>
+        + validateRecipe(components: List<RecipeComponent>, items: List<Item>): Boolean
+    }
+
+    class InventoryStatusEvaluator {
+        + calculateVariance(actual: Number, expected: Number): Number
+        + evaluateStatus(variance: Number, threshold: Number, expected: Number): String
+        + computeExpectedStock(flow: Any): Number
+    }
+
+    class ProductImportService {
+        + parseExcelWorkbook(file: File): Promise<List>
+        + fuzzyMatchProductName(name: String, catalog: List): Any
+        + damerauLevenshteinDistance(a: String, b: String): Number
+        + generateExcelTemplate(): Promise<Blob>
+    }
+
+    class PdfReportGenerator {
+        + renderCanvasReport(audit: AuditRecord, items: List): Promise<List<HTMLCanvasElement>>
+        + exportToPdf(canvases: List): Promise<Blob>
+        + sharePdfViaWhatsApp(pdfBlob: Blob, summaryText: String): Promise<void>
+        + printAuditReport(pdfBlob: Blob): void
+    }
 }
 
-class Department {
-    - code: String
-    - name: String
-    - headDoctor: Doctor
-    - floorNumber: Int
-    + listActiveDoctors(): List<Doctor>
+' ─── Package 6: Presentation Controllers & UI ───────────────────
+package "Presentation Layer (src/App.tsx & Views)" {
+
+    class AppController <<coordinator>> {
+        + activeRole: DeviceRole
+        + currentLocation: InventoryLocation
+        + currentShift: ShiftInfo
+        + categories: List<Category>
+        + items: List<Item>
+        + counts: Map<String, Number>
+        + undoStack: List<Any>
+        + transfers: List<Transfer>
+        + audits: List<AuditRecord>
+        + syncStatus: String
+        + handleCountSubmit(itemId: String, val: Number): void
+        + handleUndo(): void
+        + handleTransferCreate(lines: List): void
+        + handleTransferReceive(id: String, lines: List): void
+        + handleAuditCommit(): void
+        + handleRoleSwitch(targetRole: DeviceRole, pin: String): void
+    }
+
+    class ShiftSetupScreen {
+        + date: String
+        + shiftType: ShiftType
+        + onStartShift(): void
+    }
+
+    class AuditHistoryScreen {
+        + audits: List<AuditRecord>
+        + onSelectAudit(id: String): void
+        + onDeleteAudit(id: String): void
+    }
+
+    class OwnerAnalyticsScreen {
+        + shrinkageTrends: List<Any>
+        + completionRate: Number
+        + renderCharts(): void
+    }
+
+    class DeviceConnectModal {
+        + roles: List<DeviceRole>
+        + rolePins: Map<DeviceRole, String>
+        + onRoleSelect(role: DeviceRole): void
+        + onVerifyPin(pin: String): Boolean
+        + onScanQr(qrData: String): void
+    }
+
+    AppController o-- ShiftSetupScreen : controls >
+    AppController o-- AuditHistoryScreen : controls >
+    AppController o-- OwnerAnalyticsScreen : controls >
+    AppController o-- DeviceConnectModal : controls >
 }
 
-class Appointment {
-    - appointmentId: String
-    - scheduledTime: DateTime
-    - status: AppointmentStatus
-    - visitType: VisitType
-    + reschedule(newSlot: DateTime): Boolean
-    + markCompleted(): void
-    + cancel(reason: String): void
-}
-
-class MedicalRecord {
-    - recordId: String
-    - recordedAt: DateTime
-    - chiefComplaint: String
-    - diagnosis: String
-    - clinicalNotes: String
-    + attachPrescription(prescription: Prescription): void
-    + generateInvoice(): Invoice
-}
-
-class Prescription {
-    - rxNumber: String
-    - issuedDate: Date
-    - expirationDate: Date
-    - refillCount: Int
-    + addItem(item: PrescriptionItem): void
-    + isDispensed(): Boolean
-}
-
-class PrescriptionItem {
-    - medicationName: String
-    - dosage: String
-    - frequency: String
-    - durationDays: Int
-    + getInstructions(): String
-}
-
-class Invoice {
-    - invoiceNumber: String
-    - totalAmount: Decimal
-    - insuranceCovered: Decimal
-    - patientPayable: Decimal
-    - status: PaymentStatus
-    + processPayment(gatewayToken: String): Boolean
-    + submitInsuranceClaim(): Boolean
-}
-
-enum AppointmentStatus {
-    SCHEDULED
-    CONFIRMED
-    IN_PROGRESS
-    COMPLETED
-    CANCELLED
-}
-
-enum PaymentStatus {
-    PENDING
-    PARTIALLY_PAID
-    SETTLED
-    DISPUTED
-}
-
-' Inheritance Relationships
-User <|-- Patient
-User <|-- Staff
-Staff <|-- Doctor
-Staff <|-- Nurse
-
-' Aggregation (Department has Doctors, Doctors can exist independently)
-Department "1" o-- "1..*" Doctor : employs >
-
-' Associations
-Patient "1" -- "0..*" Appointment : books >
-Doctor "1" -- "0..*" Appointment : attends >
-Appointment "0..1" --> "1" MedicalRecord : documents >
-
-' Composition (MedicalRecord owns Prescription lifecycle)
-MedicalRecord "1" *-- "0..*" Prescription : contains >
-
-' Composition (Prescription owns PrescriptionItems)
-Prescription "1" *-- "1..*" PrescriptionItem : specifies >
-
-' Association with Invoice
-MedicalRecord "1" --> "1" Invoice : bills >
-Patient "1" -- "0..*" Invoice : responsible for >
+' Cross-Package Dependencies
+AppController --> InventoryDataService : invokes >
+AppController ..> BleScaleClient : consumes >
+AppController ..> SpeechRecognitionEngine : consumes >
+AppController ..> CompositeInventoryCalculator : invokes >
+AppController ..> InventoryStatusEvaluator : evaluates_with >
+AppController ..> ProductImportService : imports_via >
+AppController ..> PdfReportGenerator : exports_via >
 
 @enduml

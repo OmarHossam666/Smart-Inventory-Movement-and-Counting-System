@@ -1,0 +1,101 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 8 — State Machine Diagram 4: Cloud Sync & Conflict Resolution Engine
+' Sources: src/data/firebaseInventorySync.ts, src/storage/repository.ts
+' UML 2.5 Strict State Machine Diagram with Composite States, Guards, Actions & Transitions
+
+title Smart Inventory — State Machine Diagram\nLifecycle 4: Cloud Synchronization & Conflict Resolution Engine
+
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam state {
+    BackgroundColor #F8FAFC
+    BorderColor #334155
+    BorderThickness 1.2
+    FontColor #0F172A
+    FontSize 11
+    FontStyle bold
+    ArrowColor #1E293B
+    ArrowThickness 1.1
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+[*] --> Offline : appBootstrap() [navigator.onLine == false]
+[*] --> OnlineSynced : appBootstrap() [navigator.onLine == true]\n/ initFirestoreListeners();\nstartHeartbeatDaemon(12s)
+
+state OnlineSynced #F0FDF4 {
+    OnlineSynced : entry / setSyncPill("Synced / متزامن", green);\nclearPendingBatch()
+    OnlineSynced : do / 12sPresenceHeartbeats();\nlistenRealtimeSnapshots()
+}
+
+OnlineSynced --> OnlinePending : localMutationRegistered(key, payload)\n/ enqueueBatch(key, payload);\nstartDebounceTimer(250ms)
+
+state OnlinePending #FEF3C7 {
+    OnlinePending : entry / setSyncPill("Pending / معلق", yellow);\nrenderPendingSyncSpinner()
+    OnlinePending : do / aggregateRapidLocalEdits()
+}
+
+OnlinePending --> OnlinePending : rapidLocalMutation(key, payload)\n/ resetDebounceTimer(250ms);\nupdatePendingBatch()
+
+OnlinePending --> OnlineSynced : debounceTimerExpired()\n/ batchCommitToFirestore();\ndrainLocalWriteQueue()
+
+OnlineSynced --> Offline : networkLost() / window.offline\n/ setSyncPill("Offline / غير متصل", gray);\nsuspendPresenceHeartbeats()
+
+OnlinePending --> Offline : networkLost() / window.offline\n/ setSyncPill("Offline / غير متصل", gray);\nbufferBatchInLocalQueue()
+
+state Offline #F1F5F9 {
+    Offline : entry / enableLocalOnlyOperations();\nrouteMutationsToStorageQueue()
+    Offline : do / scheduleReconnectionPing(min 2s, max 30s)
+}
+
+Offline --> Offline : localMutationWhileOffline(key, payload)\n/ writeToStorageQueue(key, payload);\nincrementOfflineMutationCounter()
+
+Offline --> Reconnecting : networkRestored() / window.online\n/ pingFirestoreEndpoint()
+
+state Reconnecting #EFF6FF {
+    Reconnecting : entry / verifyFirestoreReachability()
+    Reconnecting : do / awaitPingResponse()
+}
+
+Reconnecting --> Offline : pingFailed() or timeout\n/ backoffRetryTimer()
+
+Reconnecting --> OnlineSynced : pingSuccess() [storageQueue.length == 0]\n/ resumePresenceHeartbeats()
+
+Reconnecting --> ConflictResolution : pingSuccess() [storageQueue.length > 0]\n/ fetchRemoteSnapshotsForQueue()
+
+state ConflictResolution #FFF7ED {
+    ConflictResolution : entry / setSyncPill("Reconciling / جاري التسوية", orange);\npauseIncomingEvents()
+    ConflictResolution : do / evaluateDocumentVersions()
+}
+
+state ResolvingDomainLogic #FFFFFF {
+    
+    ConflictResolution --> ResolvingDomainLogic : conflictDetected(key) [remoteVer > localBaseVer]
+    
+    state "Counts LWW Merge" as MergeCounts #EFF6FF
+    state "Transfers Precedence Merge" as MergeTransfers #EFF6FF
+    state "Role PINs Newest Timestamp" as MergePins #EFF6FF
+    state "Audits UUID Set Union" as MergeAudits #EFF6FF
+    
+    ResolvingDomainLogic : entry / routeToDomainStrategy()
+    
+    ResolvingDomainLogic --> MergeCounts : [key == "counts"]
+    ResolvingDomainLogic --> MergeTransfers : [key == "transfers"]
+    ResolvingDomainLogic --> MergePins : [key == "rolePins"]
+    ResolvingDomainLogic --> MergeAudits : [key == "audits"]
+}
+
+ResolvingDomainLogic --> ConflictResolution : domainResolved(key, canonicalPayload)\n/ updateCanonicalLocal(key);\nprepareBatchWrite(key)
+
+ConflictResolution --> OnlineSynced : allConflictsResolved()\n/ commitResolvedBatchToFirestore();\nclearStorageQueue();\nresumePresenceHeartbeats();\nnotifyUISubscribers()
+
+@enduml

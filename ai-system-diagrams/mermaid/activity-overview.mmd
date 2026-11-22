@@ -1,0 +1,88 @@
+%% Smart Inventory Movement & Counting System
+%% Deliverable 4 — Activity Diagram (Mermaid Companion — High-Level Workflow Map)
+%% Connects all five key business processes end-to-end.
+
+flowchart TD
+    %% ── Styling Classes ─────────────────────────────────────────
+    classDef startNode  fill:#1E293B,stroke:#0F172A,stroke-width:2px,color:#FFFFFF,font-weight:700
+    classDef stopNode   fill:#0F172A,stroke:#0F172A,stroke-width:2px,color:#FFFFFF,font-weight:700
+    classDef countNode  fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#1E3A8A
+    classDef transNode  fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D
+    classDef auditNode  fill:#FFF7ED,stroke:#EA580C,stroke-width:1.5px,color:#7C2D12
+    classDef syncNode   fill:#F5F3FF,stroke:#7C3AED,stroke-width:1.5px,color:#4C1D95
+    classDef decNode    fill:#FEF3C7,stroke:#D97706,stroke-width:1.3px,color:#78350F
+
+    Start([● Start Work Period]):::startNode --> ShiftSetup["UC-01 Set Up Shift & Location\n(Morning / Evening / Night)"]:::countNode
+    
+    ShiftSetup --> ModeSelect{"Select Core Operation"}:::decNode
+    
+    %% ── Branch 1: Counting & Stock Operations ───────────────────
+    ModeSelect -->|Inventory Counting| Modality{"Select Input Modality"}:::decNode
+    Modality -->|Keypad| Keypad["UC-04 Enter Count via Touch Keypad\n(Quick presets: +0.5, +1, +5)"]:::countNode
+    Modality -->|BLE Scale| BLE["UC-05 Read GATT Weight (0x2A9D)\n(Stabilize +/-5g > 1.2s)"]:::countNode
+    Modality -->|Voice| Voice["UC-06 Speak Arabic Phrase (ar-SA)\n(Phonetic number & unit parsing)"]:::countNode
+    
+    Keypad --> CalcVariance["UC-09/10 Calculate Variance\nvariance = entered - expected"]:::countNode
+    BLE --> CalcVariance
+    Voice --> CalcVariance
+    
+    CalcVariance --> CompCheck{"Composite / Recipe Item?"}:::decNode
+    CompCheck -->|Yes| AutoDeduct["UC-12/13 Auto-Deduct Components\n(Deduct raw meat, spices, packaging)"]:::countNode
+    CompCheck -->|No| LocalStore["Persist Count to Local Storage\n(IndexedDB / SQLite)"]:::countNode
+    AutoDeduct --> LocalStore
+    
+    LocalStore --> SyncQueue["Queue 250ms Debounced Sync\n(Firestore keys/counts)"]:::syncNode
+
+    %% ── Branch 2: Transfers (Butcher -> Restaurant) ─────────────
+    ModeSelect -->|Inter-Location Transfer| CreateTrans["UC-19 Create Transfer (Butcher)\n(Manifest: items, weighed kg, notes)"]:::transNode
+    CreateTrans --> DispatchTrans["Dispatch Outbound Transfer\nstatus = 'Sent'"]:::transNode
+    DispatchTrans --> CloudTrans["Broadcast to Firestore\nbranches/{branchId}/transfers"]:::syncNode
+    
+    CloudTrans --> RecvNotify["Restaurant Receives Live Alert"]:::transNode
+    RecvNotify --> WeighIn["UC-20 Physically Weigh Incoming Delivery"]:::transNode
+    WeighIn --> MatchCheck{"Weights Match\nwithin 1% tolerance?"}:::decNode
+    
+    MatchCheck -->|Yes: Matched| AcceptTrans["Accept Transfer\nstatus = 'Received'"]:::transNode
+    MatchCheck -->|No: Mismatch| FlagDiscrepancy["UC-20b Flag Discrepancy\n(scale_difference / transit_spill / short)"]:::transNode
+    
+    AcceptTrans --> Reconcile["Credit Restaurant Inventory Stock"]:::transNode
+    FlagDiscrepancy --> DiscrepReconcile["Credit Only Actual Weight\nLog Shrinkage against Butcher"]:::transNode
+    Reconcile --> TransDone([Transfer Closed]):::stopNode
+    DiscrepReconcile --> OwnerAlert["Alert Owner Analytics"]:::auditNode
+    OwnerAlert --> TransDone
+
+    %% ── Branch 3: Comprehensive Audit Session ───────────────────
+    SyncQueue --> EndOfShift{"Shift Ending?"}:::decNode
+    EndOfShift -->|Continue Counting| ModeSelect
+    EndOfShift -->|Conduct Audit| InitAudit["UC-24 Initiate Audit Session"]:::auditNode
+    
+    InitAudit --> ReviewVariance["UC-25 Review Aggregate Shrinkage\n(matchedCount, toleranceCount, shortageCount)"]:::auditNode
+    ReviewVariance --> PinCheck{"Verify Owner PIN\n(UC-40)"}:::decNode
+    PinCheck -->|Valid PIN| CommitAudit["UC-26 Commit Immutable AuditRecord\n(Archive locally & push to Firestore)"]:::auditNode
+    PinCheck -->|Invalid PIN| ReviewVariance
+    
+    CommitAudit --> RenderPDF["UC-29 Render 2x High-DPI Canvas\n(Export to jsPDF vector document)"]:::auditNode
+    RenderPDF --> DispatchReport{"Select Export Channel"}:::decNode
+    
+    DispatchReport -->|WhatsApp| WhatsApp["UC-30 Construct wa.me Deep-Link\n(Arabic summary text & native PDF share)"]:::auditNode
+    DispatchReport -->|Print| PrintDoc["UC-31 Native Print Window"]:::auditNode
+    DispatchReport -->|Download| SaveFile["UC-34 Download Local PDF"]:::auditNode
+    
+    WhatsApp --> EndShift([● Shift Finalised]):::stopNode
+    PrintDoc --> EndShift
+    SaveFile --> EndShift
+
+    %% ── Cross-Cutting: Background Sync & Conflict Resolution ────
+    subgraph BackgroundSync ["🔄 Background Resilience (UC-57)"]
+        direction TB
+        NetDetect["Detect Network Online Event\nor 12s Heartbeat Tick"]:::syncNode
+        NetDetect --> CheckPending{"Pending Mutations\nin Local Queue?"}:::decNode
+        CheckPending -->|Yes| FetchRemote["Fetch Latest Remote Firestore State"]:::syncNode
+        FetchRemote --> MergeStrategy{"Conflict Detected?"}:::decNode
+        MergeStrategy -->|Yes| DomainMerge["Execute Domain Merge:\n* Counts: LWW per item\n* Transfers: State Precedence\n* PINs: Newest Timestamp\n* Audits: UUID Union"]:::syncNode
+        MergeStrategy -->|No| PushLocal["Push Local Payload Directly"]:::syncNode
+        DomainMerge --> BatchWrite["Atomic Batch Write to Firestore"]:::syncNode
+        PushLocal --> BatchWrite
+        BatchWrite --> DrainQueue["Clear Pending Queue & Update Status: 'Synced'"]:::syncNode
+        CheckPending -->|No| Heartbeat["Send 12s Presence Heartbeat"]:::syncNode
+    end

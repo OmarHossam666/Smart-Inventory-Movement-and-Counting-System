@@ -1,0 +1,146 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 2 — Use Case Diagram (Part 3 of 3): Owner Admin, Device & Data Management
+' Source: src/App.tsx (ownerScreen states), src/DeviceConnectModal.tsx,
+'         src/DataBackup.tsx, src/features/productImport.ts,
+'         src/data/firebase/authService.ts, src/storage/repository.ts
+' UML 2.5 Strict Notation
+
+title Smart Inventory — Use Case Diagram\nPart 3: Owner Administration, Device & Data Management
+
+left to right direction
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam actor {
+    BackgroundColor #F8FAFC
+    BorderColor #1E293B
+    FontColor #0F172A
+    FontSize 12
+    FontStyle bold
+}
+
+skinparam usecase {
+    BackgroundColor #FFF7ED
+    BorderColor #EA580C
+    BorderThickness 1.3
+    FontColor #7C2D12
+    ArrowColor #475569
+    ArrowThickness 1.1
+}
+
+skinparam rectangle {
+    BackgroundColor #FFFFFF
+    BorderColor #64748B
+    BorderThickness 1.6
+    FontColor #0F172A
+    FontSize 13
+    FontStyle bold
+}
+
+' ─── Primary Actors ───────────────────────────────────────────────
+actor "Butcher\n(الملحمة)" as butcher
+actor "Restaurant\n(المطعم)" as restaurant
+actor "Owner\n(المالك)" as owner
+
+' ─── Secondary Actors ─────────────────────────────────────────────
+actor "Firebase Auth\n<<external system>>" as firebaseAuth
+actor "Firebase Firestore\n<<external system>>" as firestore
+
+' ─── Actor Generalisation (Butcher and Restaurant are users) ──────
+' Both inherit base device-role behaviour
+
+' ─── System Boundary ──────────────────────────────────────────────
+rectangle "Smart Inventory System — Owner Administration, Device & Data Management" {
+
+    ' ── Device & Authentication ──────────────────────────────────
+    usecase "UC-38\nAuthenticate Device\n(Anonymous Auth)" as UC38
+    usecase "UC-39\nSelect Device Role\n(Owner/Butcher/Restaurant)" as UC39
+    usecase "UC-40\nEnter Role PIN" as UC40
+    usecase "UC-41\nScan / Share Branch\nQR Code" as UC41
+    usecase "UC-42\nSwitch Branch" as UC42
+    usecase "UC-43\nView Online Device\nPresence" as UC43
+    usecase "UC-44\nSend Sync Ping to\nOther Devices" as UC44
+
+    ' ── Owner Settings (gated by Owner PIN) ──────────────────────
+    usecase "UC-45\nEnter Owner PIN\n(Access Owner Settings)" as UC45
+    usecase "UC-46\nManage Products\n(Create/Update/Delete)" as UC46
+    usecase "UC-47\nManage Recipe Components\n(Composite Items)" as UC47
+    usecase "UC-48\nSet Product Configuration\n(opening qty, cost, shrinkage)" as UC48
+    usecase "UC-49\nImport Products from Excel" as UC49
+    usecase "UC-50\nUpload Product Image" as UC50
+    usecase "UC-51\nSet Owner Phone Number" as UC51
+    usecase "UC-52\nChange Owner PIN" as UC52
+    usecase "UC-53\nSet Role PINs\n(Butcher & Restaurant)" as UC53
+
+    ' ── Data Backup & Restore ────────────────────────────────────
+    usecase "UC-54\nExport JSON Backup" as UC54
+    usecase "UC-55\nImport & Restore\nJSON Backup" as UC55
+    usecase "UC-56\nValidate Backup File" as UC56
+    usecase "UC-57\nClear All Inventory Data\n(Factory Reset)" as UC57
+
+    ' ── UI / App Preferences ─────────────────────────────────────
+    usecase "UC-58\nChange Theme\n(Light/Dark/System)" as UC58
+    usecase "UC-59\nConfigure Scale Name" as UC59
+}
+
+' ─── Butcher Associations ─────────────────────────────────────────
+butcher --> UC38
+butcher --> UC39
+butcher --> UC40
+butcher --> UC41
+butcher --> UC43
+butcher --> UC44
+butcher --> UC59
+
+' ─── Restaurant Associations ──────────────────────────────────────
+restaurant --> UC38
+restaurant --> UC39
+restaurant --> UC40
+restaurant --> UC41
+restaurant --> UC43
+restaurant --> UC44
+
+' ─── Owner Associations ───────────────────────────────────────────
+owner --> UC38
+owner --> UC39
+owner --> UC41
+owner --> UC42
+owner --> UC43
+owner --> UC44
+owner --> UC45
+owner --> UC54
+owner --> UC55
+owner --> UC57
+owner --> UC58
+
+' ─── Secondary Actor Associations ────────────────────────────────
+firebaseAuth <-- UC38
+firestore <-- UC42
+
+' ─── <<include>> Relationships ───────────────────────────────────
+' Mandatory sub-behaviors
+UC39 ..> UC40 : <<include>>
+UC45 ..> UC40 : <<include>>
+
+UC46 ..> UC45 : <<include>>
+UC47 ..> UC45 : <<include>>
+UC48 ..> UC45 : <<include>>
+UC49 ..> UC45 : <<include>>
+UC50 ..> UC45 : <<include>>
+UC51 ..> UC45 : <<include>>
+UC52 ..> UC45 : <<include>>
+UC53 ..> UC45 : <<include>>
+UC57 ..> UC45 : <<include>>
+
+UC55 ..> UC56 : <<include>>
+
+' ─── <<extend>> Relationships ────────────────────────────────────
+' Optional / conditional behaviors
+UC41 ..> UC42 : <<extend>>
+UC50 ..> UC46 : <<extend>>
+UC47 ..> UC46 : <<extend>>
+
+@enduml

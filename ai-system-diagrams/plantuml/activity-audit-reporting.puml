@@ -1,0 +1,155 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 4 — Activity Diagram (Workflow 4): Audit Finalization, Canvas PDF & WhatsApp Dispatch
+' Sources: src/App.tsx, src/data/inventoryDataService.ts, src/PdfReport.tsx, src/features/pdfDelivery.ts
+' UML 2.5 Strict Swimlane Activity Diagram
+
+title Smart Inventory — Activity Diagram\nWorkflow 4: Comprehensive Audit Finalization, Canvas PDF & WhatsApp Dispatch
+
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam activity {
+    BackgroundColor #FFF7ED
+    BorderColor #EA580C
+    BorderThickness 1.3
+    FontColor #7C2D12
+    FontSize 11
+}
+
+skinparam activityDiamond {
+    BackgroundColor #FEF3C7
+    BorderColor #D97706
+    FontColor #78350F
+    FontSize 10
+}
+
+skinparam swimlane {
+    BorderColor #64748B
+    BorderThickness 1.5
+    TitleBackgroundColor #F8FAFC
+    TitleFontColor #0F172A
+    TitleFontSize 12
+    TitleFontStyle bold
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+|#F8FAFC|Operator / Owner|
+|#F1F5F9|Audit Governance Engine (App.tsx / DataService)|
+|#F8FAFC|Canvas & PDF Engine (PdfReport.tsx)|
+|#F1F5F9|External Services (WhatsApp / Print)|
+
+|Operator / Owner|
+start
+:Complete physical item counts across shift;
+:Click "Finish & Archive Audit / إنهاء واعتماد الجرد";
+
+|Audit Governance Engine (App.tsx / DataService)|
+if (Uncounted items exist in current shift catalog?) then ([yes: uncounted > 0])
+    |Operator / Owner|
+    :Display uncounted warning prompt:
+    "يوجد أصناف لم يتم جردها، هل تريد اعتبارها صفراً أم تخطيها؟";
+    if (Operator Choice?) then ([Set to Zero])
+        |Audit Governance Engine (App.tsx / DataService)|
+        :Set physical count = 0 for remaining items;
+    else ([Skip Uncounted])
+        |Audit Governance Engine (App.tsx / DataService)|
+        :Retain uncounted items as unverified;
+    endif
+else ([no: 100% counted])
+endif
+
+|Audit Governance Engine (App.tsx / DataService)|
+:Compute aggregate audit metrics:
+* totalItems, countedCount, uncountedCount
+* matchedCount (variance == 0)
+* toleranceCount (|variance%| <= threshold)
+* shortageCount (negative variance > threshold)
+* totalVarianceKg = sum(enteredCount - expectedBalance)
+* estimatedShrinkageCost;
+:Render color-coded variance review table;
+
+|Operator / Owner|
+:Review shrinkage items and high-variance alerts;
+:Enter optional audit notes / comments;
+:Click "Commit Final Audit / اعتماد الترحيل النهائي";
+
+repeat
+    :Prompt 4-digit Security PIN modal;
+    :Enter PIN via secure numeric keypad;
+    |Audit Governance Engine (App.tsx / DataService)|
+    :Compare entered PIN hash against stored role PIN;
+repeat while (PIN valid?) is ([invalid: display shake error])
+-> ([valid]);
+
+|Audit Governance Engine (App.tsx / DataService)|
+:Compile immutable AuditRecord entity:
+* id: UUID
+* date, shiftType, location, branchId
+* aggregate metrics & detailed item lines
+* committedBy, committedAt;
+
+fork
+    :Save AuditRecord to local "audits" repository;
+fork again
+    :Push AuditRecord snapshot to
+    Firestore branches/{branchId}/audits;
+fork again
+    :Reset active shift counting counters;
+    :Archive final balances as starting stock for next shift;
+end fork
+
+|Operator / Owner|
+:Navigate to Audit History or click "Generate PDF Report";
+
+|Canvas & PDF Engine (PdfReport.tsx)|
+:Initialize high-DPI HTML5 <canvas> (2x resolution);
+:Draw store branding, title header, date, and shift;
+:Render summary metric KPI cards
+(Total Items, Matched %, Shortage kg);
+:Render structured RTL Arabic inventory table:
+(Item, Base Unit, Expected, Actual, Variance, Status);
+:Convert Canvas pages to vector document via jsPDF;
+:Display interactive PDF preview modal;
+
+|Operator / Owner|
+if (Select Report Dispatch Channel?) then ([Share via WhatsApp])
+    |External Services (WhatsApp / Print)|
+    :Compile pre-formatted Arabic WhatsApp summary:
+    "📊 تقرير جرد المخزون - فرع [الفرع]
+    التاريخ: [التاريخ] | الوردية: [الوردية]
+    إجمالي الأصناف: [العدد]
+    نسبة المطابقة: [%] | العجز: [كجم]
+    أبرز الفروقات: [...]";
+    :URL-encode summary text payload;
+    :Construct deep-link URL:
+    https://wa.me/?text={encodedText};
+    :Launch WhatsApp Web or mobile app via deep-link;
+    if (Running on Native Android Capacitor?) then ([yes])
+        :Invoke Capacitor Share plugin
+        to attach physical PDF binary;
+    else ([web])
+    endif
+
+elseif (Select Report Dispatch Channel?) then ([Native Print])
+    |External Services (WhatsApp / Print)|
+    :Trigger browser / Capacitor window.print();
+
+else ([Download PDF])
+    |Canvas & PDF Engine (PdfReport.tsx)|
+    :Trigger client-side file download:
+    "smart-inventory-audit-[date]-[shift].pdf";
+endif
+
+|Operator / Owner|
+:Display confirmation: "تم تصدير وحفظ التقرير بنجاح";
+stop
+@enduml

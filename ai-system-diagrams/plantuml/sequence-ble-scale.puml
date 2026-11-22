@@ -1,0 +1,125 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 6 — Sequence Diagram (Flow 1): BLE Scale Pairing & Weight Reading
+' Sources: src/features/bleScale.ts, src/App.tsx, src/storage/repository.ts, src/data/firebaseInventorySync.ts
+' UML 2.5 Strict Sequence Diagram with Activation Bars & Interaction Frames
+
+title Smart Inventory — Sequence Diagram\nFlow 1: BLE Weight Scale Connection, GATT Streaming & Count Recording
+
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+
+skinparam sequence {
+    ArrowColor #1E293B
+    ArrowThickness 1.2
+    LifeLineBorderColor #2563EB
+    LifeLineBackgroundColor #EFF6FF
+    ParticipantBorderColor #334155
+    ParticipantBackgroundColor #F8FAFC
+    ParticipantFontSize 11
+    ParticipantFontStyle bold
+    ActorBorderColor #1E293B
+    ActorBackgroundColor #F8FAFC
+    BoxBorderColor #94A3B8
+    BoxBackgroundColor #FAFAFA
+}
+
+actor "Operator\n(Butcher/Kitchen)" as operator
+participant "AppController\n(src/App.tsx)" as app
+participant "BleScaleClient\n(src/features/bleScale.ts)" as bleClient
+participant "BleClient Plugin\n(@capacitor-community)" as plugin
+entity "BLE Scale Device\n(GATT 0x181D)" as scale
+database "InventoryStorage\n(src/storage/)" as storage
+database "FirebaseInventorySync\n(src/data/)" as sync
+
+autonumber 1.0
+
+== 1. Scale Discovery & GATT Handshake ==
+operator -> app : Open Item Count Modal (Weight Unit)
+activate app
+app -> bleClient : isConnected()
+activate bleClient
+bleClient --> app : false
+deactivate bleClient
+
+alt [Scale Disconnected]
+    app -> bleClient : scanAndConnect()
+    activate bleClient
+    bleClient -> plugin : requestDevice({ services: ["0x181D"] })
+    activate plugin
+    plugin -> scale : Scan BLE Advertising Packets
+    scale --> plugin : Device Found (GATT Weight Service)
+    plugin --> bleClient : deviceId
+    deactivate plugin
+    
+    bleClient -> plugin : connect(deviceId)
+    activate plugin
+    plugin -> scale : Establish BLE GATT Connection
+    scale --> plugin : Connection Established
+    plugin --> bleClient : Connected
+    deactivate plugin
+    
+    bleClient --> app : true (Scale Paired)
+    deactivate bleClient
+    app -> app : setBleConnected(true)
+end
+
+== 2. Live Weight Streaming & Stabilization ==
+app -> bleClient : startWeightStream(callback)
+activate bleClient
+bleClient -> plugin : startNotifications(deviceId, "0x181D", "0x2A9D")
+activate plugin
+
+operator -> scale : Place physical meat cut on scale pan
+scale -> plugin : Stream GATT Weight Packet (0x2A9D DataView)
+plugin -> bleClient : onNotification(dataView)
+
+bleClient -> bleClient : parseGattWeight(dataView)
+note right of bleClient
+  Byte 0 flags:
+  bit 0 = 0 (SI kg)
+  bit 1 = 1 (timestamp present)
+  Extract 16-bit weight integer
+  Apply scale resolution: raw * 0.005 kg
+end note
+
+loop [While weight reading is fluctuating (> 5g delta)]
+    scale -> plugin : Stream GATT Weight Packet
+    plugin -> bleClient : onNotification(dataView)
+    bleClient -> app : callback(unstableWeight)
+    app -> app : Display streaming live weight ("قراءة غير مستقرة...")
+end
+
+note over bleClient, scale : Weight stabilized within +/- 5g for > 1.2 seconds
+bleClient -> app : callback(stabilizedWeight)
+deactivate plugin
+deactivate bleClient
+app -> app : Emit stabilization chime & enable "Accept Weight"
+
+== 3. Count Confirmation & Dual-Path Persistence ==
+operator -> app : Click "Accept Weight / اعتماد الوزن"
+app -> app : convertToBaseUnit(stabilizedWeight, item.unitMultiplier)
+app -> app : pushUndoStack(itemId, previousCount, timestamp)
+app -> app : calculateVariance(stabilizedWeight, expectedBalance)
+app -> app : evaluateStatus(variance, threshold)
+
+par [Concurrent Persistence & Debounced Sync]
+    app -> storage : setItem("counts", updatedCountsMap)
+    activate storage
+    storage --> app : Promise<void> resolved
+    deactivate storage
+else
+    app -> sync : syncKey("counts", updatedCountsMap)
+    activate sync
+    note right of sync : Debounce 250ms batch window
+    sync -> sync : enqueueBatch("counts", updatedCountsMap)
+    deactivate sync
+end
+
+app --> operator : Display updated badge (matched/tolerance/shortage)
+deactivate app
+
+@enduml

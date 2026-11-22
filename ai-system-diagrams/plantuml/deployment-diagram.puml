@@ -1,10 +1,13 @@
 @startuml
-' MedPulse Hospital Management System - Deployment Diagram
-' Generated with AI for Advanced Software Engineering
-title MedPulse Smart Hospital - Physical Deployment Architecture
+' Smart Inventory Movement & Counting System
+' Deliverable 7 — Architecture View 3: Deployment Architecture Diagram
+' Sources: capacitor.config.ts, firebase.json, package.json, firestore.rules
+' UML 2.5 Strict Deployment Nodes, Artifacts, Execution Environments & Network Topology
+
+title Smart Inventory — Physical Deployment Architecture & Network Topology
 
 skinparam shadowing false
-skinparam roundcorner 6
+skinparam roundcorner 8
 skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
 skinparam defaultFontSize 11
 
@@ -13,105 +16,102 @@ skinparam node {
     BorderColor #334155
     BorderThickness 1.2
     FontColor #0F172A
+    FontSize 11
+    FontStyle bold
 }
 
 skinparam artifact {
     BackgroundColor #EFF6FF
     BorderColor #2563EB
     FontColor #1E3A8A
+    FontSize 10
 }
 
 skinparam database {
     BackgroundColor #FEF3C7
     BorderColor #D97706
     FontColor #78350F
+    FontSize 10
 }
 
 skinparam cloud {
     BackgroundColor #F1F5F9
     BorderColor #64748B
     FontColor #1E293B
+    FontSize 12
+    FontStyle bold
 }
 
-' Clients
-node "Patient Mobile Device" as mobile_dev <<iOS / Android>> {
-    artifact "MedPulse Patient App\n[Flutter 3.x / Dart]" as mobile_app
+' ─── Node 1: Butcher Workstation ─────────────────────────────────
+node "Butcher Workstation (Terminal 1)\n<<Android 11+ Touch POS / Tablet>>" as ButcherNode {
+    node "Execution Environment:\nAndroid OS (ARM64) + WebView 120+" as ButcherOS {
+        artifact "app-release.apk\n[com.smartinventory.butcher]\n(Capacitor 8.0 Hybrid App)" as ButcherApk
+        database "Local Encrypted SQLite DB\n[smart_inventory.db]\n(AES-256 via Capacitor SQLite)" as ButcherSqlite
+        ButcherApk --> ButcherSqlite : Read / Write
+    }
 }
 
-node "Clinical Workstation" as clinical_pc <<Windows 11 / macOS>> {
-    artifact "EHR Web Portal\n[React 19 / TypeScript]" as web_app
+' ─── Node 2: Restaurant Kitchen Workstation ─────────────────────
+node "Restaurant Workstation (Terminal 2)\n<<Android Tablet / Web POS Terminal>>" as RestaurantNode {
+    node "Execution Environment:\nAndroid WebView or Desktop Browser" as RestaurantOS {
+        artifact "app-release.apk / Web SPA\n(React 19 + Vite 8 Bundle)\n[HTML5, JS, CSS]" as RestaurantApk
+        database "Local DB Engine\n(SQLite or IndexedDB)\n[smart-inventory]" as RestaurantDb
+        RestaurantApk --> RestaurantDb : Read / Write
+    }
 }
 
-node "Bedside IoT Gateway" as iot_hub <<Embedded Linux>> {
-    artifact "Vitals Telemetry Daemon\n[Rust / MQTT Client]" as iot_agent
+' ─── Node 3: Owner Mobile Device / Laptop ───────────────────────
+node "Owner Terminal (Supervisor)\n<<Mobile Android/iOS or Laptop>>" as OwnerNode {
+    node "Execution Environment:\nChrome / Safari / Edge Desktop / Android" as OwnerOS {
+        artifact "Smart Inventory Web Client\n(Vite SPA Dist Bundle)\n[Tailwind CSS v4, React 19]" as OwnerApp
+        database "Browser IndexedDB\n[smart-inventory]" as OwnerIdb
+        OwnerApp --> OwnerIdb : Read / Write
+    }
 }
 
-' Edge Tier
-cloud "Cloudflare Edge Network" as edge {
-    node "Cloudflare CDN & WAF" as waf
-    node "Edge DNS & DDoS Shield" as dns
+' ─── Node 4: BLE Scale Hardware Peripheral ──────────────────────
+node "Bluetooth LE Digital Scale\n<<Hardware Sensor / BLE Peripheral>>" as ScaleNode {
+    artifact "Embedded Scale Firmware\n[Weight Service 0x181D]\n[Weight Char 0x2A9D]" as ScaleFw
 }
 
-' Enterprise Kubernetes Cluster
-node "Production Kubernetes Cluster (EKS / Bare-Metal)" as k8s_cluster {
+' ─── Node 5: Google Cloud / Firebase Cloud Platform ─────────────
+cloud "Google Cloud Platform\nRegion: multi-region (us-central1 / europe-west)" as GoogleCloud {
     
-    node "Ingress Controller" as ingress <<Traefik / NGINX>> {
-        artifact "TLS Termination & Routing" as routing
+    node "Firebase Hosting (CDN Edge)" as CdnNode {
+        artifact "Bundled Web Assets\n[/dist directory]\nindex.html, *.js, *.css" as DistAssets
     }
 
-    node "Pod: API Gateway (Replica x3)" as gateway_pod {
-        artifact "Spring Cloud Gateway\n[Java 21 / Netty]" as api_gw
+    node "Firebase Cloud Firestore Cluster" as FirestoreCluster {
+        database "Firestore Distributed Database\nRule: branches/{branchId} isolation\n* keys/ (catalog, counts, PINs)\n* transfers/ (real-time shipments)\n* presence/ (12s heartbeats)\n* audits/ (immutable records)" as CloudDb
     }
 
-    node "Pod: Core EHR Service (Replica x4)" as ehr_pod {
-        artifact "EHR & Clinical API\n[Spring Boot / JVM]" as ehr_service
-    }
-
-    node "Pod: Appointment Service (Replica x3)" as appt_pod {
-        artifact "Scheduling Service\n[Go 1.23 / Gin]" as appt_service
-    }
-
-    node "Pod: Billing & Claims Worker (Replica x2)" as billing_pod {
-        artifact "Claims & Payment Worker\n[Python 3.12 / FastAPI]" as billing_service
+    node "Firebase Authentication Gateway" as AuthCluster {
+        artifact "Identity Authority\nAnonymous & Email/Password JWTs" as AuthTokens
     }
 }
 
-' Data Tier
-node "Secure Healthcare VPC (Private Subnet)" as data_tier {
-    database "PostgreSQL 16 Cluster\n[Primary Write Instance]" as pg_primary
-    database "PostgreSQL 16 Replica\n[Read-Only Standby]" as pg_replica
-    database "Redis 7 Cluster\n[In-Memory Cache & Session]" as redis_cache
-    node "Encrypted Storage (MinIO / S3)\n[DICOM Medical Images]" as dicom_store
+' ─── Node 6: Third-Party Messaging Platform ─────────────────────
+cloud "Meta WhatsApp Infrastructure" as WhatsAppPlatform {
+    node "WhatsApp Web & App Gateway" as WaNode {
+        artifact "wa.me Protocol Endpoint\nhttps://wa.me/?text={encodedPayload}" as WaEndpoint
+    }
 }
 
-' External Systems
-cloud "External Health & Cloud Services" as ext_services {
-    node "Insurance Clearinghouse" as ins_cloud <<FHIR / HL7 REST>>
-    node "Stripe Payment Gateway" as stripe_cloud <<PCI-DSS Tier 1>>
-    node "Twilio SMS & Alert Service" as twilio_cloud <<REST API>>
-}
+' ─── Physical Network Connections & Protocols ────────────────────
+ButcherNode .. ScaleNode : "Bluetooth LE 5.0 (2.4 GHz RF)\nGATT Service 0x181D / Char 0x2A9D\nRange: ~10 meters"
 
-' Networking connections
-mobile_app --> waf : HTTPS : 443\n(mTLS / OAuth2)
-web_app --> waf : HTTPS : 443\n(WSS / WebSockets)
-iot_agent --> routing : MQTTS : 8883\n(Device Certs)
+ButcherNode <--> FirestoreCluster : "WSS / HTTPS (TLS 1.3)\nReal-time onSnapshot & 250ms batch writes"
+RestaurantNode <--> FirestoreCluster : "WSS / HTTPS (TLS 1.3)\nReal-time onSnapshot & 250ms batch writes"
+OwnerNode <--> FirestoreCluster : "WSS / HTTPS (TLS 1.3)\nReal-time audits, analytics & presence"
 
-waf --> routing : Internal TLS : 443
-routing --> api_gw : HTTP/2 : 8080
+ButcherNode ..> AuthCluster : "HTTPS / REST\nBranch Auth Token Exchange"
+RestaurantNode ..> AuthCluster : "HTTPS / REST\nBranch Auth Token Exchange"
+OwnerNode ..> AuthCluster : "HTTPS / REST\nBranch Auth Token Exchange"
 
-api_gw --> ehr_service : gRPC : 50051
-api_gw --> appt_service : gRPC : 50052
-api_gw --> billing_service : gRPC : 50053
+CdnNode ..> ButcherNode : "HTTPS (App Bundle Update)"
+CdnNode ..> RestaurantNode : "HTTPS (SPA Assets)"
+CdnNode ..> OwnerNode : "HTTPS (SPA Assets)"
 
-ehr_service --> pg_primary : JDBC / TLS : 5432
-appt_service --> pg_primary : SQL / Connection Pool
-appt_service --> pg_replica : Read Queries : 5432
-ehr_service --> redis_cache : RESP : 6379 (Tokens & Cache)
-ehr_service --> dicom_store : S3 API : 9000 (Scans & X-Rays)
-pg_primary ..> pg_replica : Streaming Replication (WAL)
-
-billing_service --> ins_cloud : HTTPS : 443 (FHIR v4)
-billing_service --> stripe_cloud : HTTPS : 443 (Payment Token)
-ehr_service --> twilio_cloud : HTTPS : 443 (Emergency SMS)
+OwnerNode ..> WaEndpoint : "HTTPS Deep-Link / Android Intent\nWhatsApp Audit Report Dispatch"
 
 @enduml

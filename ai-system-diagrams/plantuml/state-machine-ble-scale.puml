@@ -1,0 +1,105 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 8 — State Machine Diagram 3: BLE Scale Connection & Measurement
+' Sources: src/features/bleScale.ts, src/ScaleConnection.tsx
+' UML 2.5 Strict State Machine Diagram with Composite States, Guards, Actions & Transitions
+
+title Smart Inventory — State Machine Diagram\nLifecycle 3: BLE Weight Scale Connection & GATT Measurement States
+
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam state {
+    BackgroundColor #F8FAFC
+    BorderColor #334155
+    BorderThickness 1.2
+    FontColor #0F172A
+    FontSize 11
+    FontStyle bold
+    ArrowColor #1E293B
+    ArrowThickness 1.1
+}
+
+skinparam note {
+    BackgroundColor #FEF9C3
+    BorderColor #CA8A04
+    FontColor #713F12
+    FontSize 10
+}
+
+[*] --> Disconnected
+
+state Disconnected #F1F5F9 {
+    Disconnected : entry / setBleConnected(false);\nclearDeviceId()
+    Disconnected : do / awaitConnectionRequest()
+}
+
+Disconnected --> Scanning : scanAndConnect()\n/ requestDevice({ services: ["0x181D"] })
+
+state Scanning #FEF3C7 {
+    Scanning : entry / renderScanningSpinner()\nstartBleDiscovery()
+    Scanning : do / filterAdvertisedServices(0x181D)
+    Scanning : exit / stopBleDiscovery()
+}
+
+Scanning --> Disconnected : cancelScan() or scanTimeout(15s)\n/ displayScanTimeoutAlert()
+
+Scanning --> Connecting : deviceDiscovered(deviceId)\n/ BleClient.connect(deviceId)
+
+state Connecting #EFF6FF {
+    Connecting : entry / establishGattConnection()
+    Connecting : do / discoverServicesAndCharacteristics()
+}
+
+Connecting --> ErrorState : connectionFailed(error)\n/ logBleError(error);\ndisplayRetryButton()
+
+Connecting --> ConnectedIdle : gattConnected()\n/ cacheDeviceId();\nsetBleConnected(true)
+
+state ConnectedIdle #EFF6FF {
+    ConnectedIdle : entry / showGreenScaleIcon()\nprepareWeightSubscription()
+    ConnectedIdle : do / maintainGattKeepalive()
+}
+
+ConnectedIdle --> StreamingActive : startWeightStream(callback)\n/ startNotifications("0x181D", "0x2A9D")
+
+state StreamingActive #FFFFFF {
+    
+    [*] --> Fluctuating
+    
+    state Fluctuating #FFF7ED {
+        Fluctuating : entry / displayStreamingLiveWeight()\nshowUnstableNotice("قراءة غير مستقرة...")
+        Fluctuating : do / samplePackets();\nparseByte0FlagsAndResolution()
+    }
+    
+    Fluctuating --> Fluctuating : packetReceived() [|currentWeight - lastWeight| > 0.005 kg]\n/ resetStabilizationTimer()
+    
+    Fluctuating --> Stabilized : stabilizationTimerExpired() [delta <= 0.005 kg for > 1.2s]\n/ emitStabilizationChime();\nenableAcceptWeightButton()
+    
+    state Stabilized #F0FDF4 {
+        Stabilized : entry / displayGreenStabilityBadge()\nlockDisplayedWeightValue()
+        Stabilized : do / awaitOperatorAcceptance()
+    }
+    
+    Stabilized --> Fluctuating : packetReceived() [|currentWeight - lockedWeight| > 0.005 kg]\n/ disableAcceptButton()
+}
+
+StreamingActive --> ConnectedIdle : acceptWeight(stabilizedWeight)\n/ stopWeightStream();\npopulateCountInputField()
+
+StreamingActive --> ConnectedIdle : cancelWeighing()\n/ stopWeightStream()
+
+ConnectedIdle --> Disconnected : userDisconnect()\n/ BleClient.disconnect()
+
+ConnectedIdle --> ErrorState : gattDisconnectedEvent()\n/ setBleConnected(false)
+StreamingActive --> ErrorState : gattDisconnectedEvent()\n/ setBleConnected(false)
+
+state ErrorState #FEF2F2 {
+    ErrorState : entry / displayDisconnectAlert("انقطع الاتصال بالميزان");\nattemptAutoReconnect(3x)
+    ErrorState : do / awaitManualRetryOrKeypadFallback()
+}
+
+ErrorState --> Scanning : retryConnect()\n/ scanAndConnect()
+ErrorState --> Disconnected : dismissError()\n/ fallbackToManualKeypad()
+
+@enduml

@@ -1,0 +1,116 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 6 — Sequence Diagram (Flow 6): Offline Cloud Synchronization & Domain Conflict Resolution
+' Sources: src/data/firebaseInventorySync.ts, src/storage/repository.ts, src/models.ts
+' UML 2.5 Strict Sequence Diagram with Activation Bars & Interaction Frames
+
+title Smart Inventory — Sequence Diagram\nFlow 6: Offline Cloud Synchronization, Network Resumption & Domain Conflict Resolution
+
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+
+skinparam sequence {
+    ArrowColor #1E293B
+    ArrowThickness 1.2
+    LifeLineBorderColor #7C3AED
+    LifeLineBackgroundColor #F5F3FF
+    ParticipantBorderColor #334155
+    ParticipantBackgroundColor #F8FAFC
+    ParticipantFontSize 11
+    ParticipantFontStyle bold
+    ActorBorderColor #1E293B
+    ActorBackgroundColor #F8FAFC
+}
+
+participant "SyncEngine\n(src/data/firebaseInventorySync.ts)" as sync
+database "Local Write Queue\n(src/storage/)" as queue
+participant "ConflictResolver\n(Strategy Engine)" as resolver
+database "Firestore Remote DB\n(Google Cloud)" as firestore
+participant "App UI Indicator\n(src/App.tsx)" as ui
+
+autonumber 6.0
+
+== 1. Network Restoration Detection ==
+sync -> sync : Listen to window 'online' event OR 12s heartbeat tick
+sync -> firestore : ping()
+activate firestore
+firestore --> sync : pong (latency: 48ms)
+deactivate firestore
+sync -> ui : updateSyncStatus("pending / جاري المزامنة")
+
+== 2. Queue Inspection & Remote State Retrieval ==
+sync -> queue : getPendingMutations()
+activate queue
+queue --> sync : mutationsQueue = [counts, transfers, rolePins, audits]
+deactivate queue
+
+loop [For Each Document Key in mutationsQueue]
+    sync -> firestore : getDoc(branches/{branchId}/keys/{key})
+    activate firestore
+    firestore --> sync : remoteDocSnapshot
+    deactivate firestore
+    
+    sync -> sync : compareVersions(localBaseVersion, remoteDocVersion)
+    
+    alt [Conflict Detected: Remote Version > Local Base Version]
+        sync -> resolver : resolveConflict(key, localMutation, remoteDocSnapshot)
+        activate resolver
+        
+        alt [key == "counts"]
+            resolver -> resolver : mergeCounts(localMap, remoteMap)
+            note right of resolver
+              Strategy: Last-Write-Wins (LWW) per item
+              Iterate item keys; compare item.timestamp;
+              Retain whichever mutation is newer.
+            end note
+        else [key == "transfers"]
+            resolver -> resolver : mergeTransfers(localList, remoteList)
+            note right of resolver
+              Strategy: State Machine Precedence
+              Terminal states ("Received", "Discrepancy", "Cancelled")
+              permanently override "Sent".
+              Sent lines immutable; merge dispute lines.
+            end note
+        else [key == "rolePins"]
+            resolver -> resolver : mergeRolePins(localPins, remotePins)
+            note right of resolver
+              Strategy: Newest Owner Timestamp Dominates
+            end note
+        else [key == "audits"]
+            resolver -> resolver : mergeAudits(localAudits, remoteAudits)
+            note right of resolver
+              Strategy: Set Union by Immutable UUID
+            end note
+        end
+        
+        resolver --> sync : resolvedCanonicalPayload
+        deactivate resolver
+    else [No Conflict Detected]
+        sync -> sync : resolvedPayload = localMutation.payload
+    end
+    
+    == 3. Atomic Remote Commit & Local Dequeue ==
+    sync -> firestore : setDoc(branches/{branchId}/keys/{key}, resolvedPayload)
+    activate firestore
+    firestore --> sync : Document Written Successfully
+    deactivate firestore
+    
+    sync -> queue : dequeueMutation(key)
+    activate queue
+    queue --> sync : Mutation Cleared
+    deactivate queue
+    
+    sync -> queue : updateCanonicalLocalCopy(key, resolvedPayload)
+    activate queue
+    queue --> sync : Local Storage Synced
+    deactivate queue
+end
+
+sync -> firestore : updatePresence(role, deviceId, timestamp: now())
+sync -> ui : updateSyncStatus("synced / متزامن")
+sync -> ui : notifySubscribersToRefreshUI()
+
+@enduml

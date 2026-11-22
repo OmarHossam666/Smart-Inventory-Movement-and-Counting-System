@@ -1,0 +1,110 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 6 — Sequence Diagram (Flow 4): Composite Dish Counting & Recipe Auto-Deduction
+' Sources: src/features/compositeInventory.ts, src/data/inventoryDataService.ts, src/App.tsx
+' UML 2.5 Strict Sequence Diagram with Activation Bars & Interaction Frames
+
+title Smart Inventory — Sequence Diagram\nFlow 4: Composite Dish Counting, Recipe Ingredient Resolution & Atomic Deductions
+
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+
+skinparam sequence {
+    ArrowColor #1E293B
+    ArrowThickness 1.2
+    LifeLineBorderColor #2563EB
+    LifeLineBackgroundColor #EFF6FF
+    ParticipantBorderColor #334155
+    ParticipantBackgroundColor #F8FAFC
+    ParticipantFontSize 11
+    ParticipantFontStyle bold
+    ActorBorderColor #1E293B
+    ActorBackgroundColor #F8FAFC
+}
+
+actor "Kitchen Staff\n(Restaurant)" as kitchen
+participant "AppController\n(src/App.tsx)" as app
+participant "CompositeCalculator\n(src/features/compositeInventory.ts)" as composite
+participant "InventoryDataService\n(src/data/inventoryDataService.ts)" as dataService
+database "InventoryStorage\n(Local DB)" as storage
+database "FirebaseInventorySync\n(Cloud BaaS)" as sync
+
+autonumber 4.0
+
+== 1. Dish Count Submission ==
+kitchen -> app : Select Composite Dish: "برجر بقري جاهز"
+activate app
+kitchen -> app : Enter Count: 40 units via Keypad
+app -> app : handleCountSubmit("dish-001", 40)
+
+app -> composite : autoDeductComponents("dish-001", 40, catalogItems, currentStock)
+activate composite
+
+== 2. Recipe Ingredient Calculation Loop ==
+composite -> composite : verify isComposite == true
+composite -> composite : loadRecipeComponents("dish-001")
+note right of composite
+  Recipe definition:
+  1. "لحم مفروم": 150g per unit
+  2. "بهارات برجر": 5g per unit
+  3. "خبز برجر": 1 piece per unit
+end note
+
+loop [For Each RecipeComponent in components]
+    composite -> composite : calculateRequiredQty(component.quantity * 40 units)
+    note right of composite
+      Component 1: 150g * 40 = 6,000g (6.0 kg)
+      Component 2: 5g * 40 = 200g
+      Component 3: 1 pc * 40 = 40 pcs
+    end note
+    
+    composite -> composite : checkAvailableStock(component.rawItemId)
+    alt [Sufficient Raw Stock]
+        composite -> composite : deductStock(rawItemId, requiredQty)
+    else [Insufficient Stock / Deficit]
+        composite -> composite : deductStockNegative(rawItemId, requiredQty)
+        composite -> composite : setHighShrinkageFlag(rawItemId, true)
+    end
+    
+    composite -> composite : createStockMovement({ \n  type: "auto_deduct", \n  itemId: rawItemId, \n  quantity: -requiredQty, \n  referenceId: "dish-001" \n})
+end
+
+composite --> app : { movements: StockMovement[], updatedRawBalances: Map }
+deactivate composite
+
+== 3. Atomic Multi-Table Persistence ==
+app -> dataService : commitCompositeCount("dish-001", 40, movements, updatedRawBalances)
+activate dataService
+
+par [Atomic Storage Commit]
+    dataService -> storage : updateCount("dish-001", 40)
+    activate storage
+    storage --> dataService : Success
+    deactivate storage
+else
+    dataService -> storage : appendStockMovements(movements)
+    activate storage
+    storage --> dataService : Success
+    deactivate storage
+else
+    dataService -> storage : updateExpectedBalances(updatedRawBalances)
+    activate storage
+    storage --> dataService : Success
+    deactivate storage
+end
+
+dataService -> sync : syncBatch({ dishCount: 40, rawMovements: movements })
+activate sync
+sync --> dataService : Batch Queued (250ms debounce)
+deactivate sync
+
+dataService --> app : Success
+deactivate dataService
+
+app --> kitchen : Display Summary Breakdown Toast:\n"تم جرد 40 برجر بنجاح وخصم 6 كجم مفروم و 200 جم بهارات"
+deactivate app
+
+@enduml

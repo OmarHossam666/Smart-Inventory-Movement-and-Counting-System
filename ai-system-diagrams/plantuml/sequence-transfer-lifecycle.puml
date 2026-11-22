@@ -1,0 +1,117 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 6 — Sequence Diagram (Flow 3): Inter-Location Transfer Lifecycle & Discrepancy Flow
+' Sources: src/data/inventoryDataService.ts, src/App.tsx, src/data/firebaseInventorySync.ts
+' UML 2.5 Strict Sequence Diagram with Activation Bars & Interaction Frames
+
+title Smart Inventory — Sequence Diagram\nFlow 3: Inter-Location Transfer Lifecycle, Discrepancy Resolution & Ledger Reconcile
+
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+
+skinparam sequence {
+    ArrowColor #1E293B
+    ArrowThickness 1.2
+    LifeLineBorderColor #16A34A
+    LifeLineBackgroundColor #F0FDF4
+    ParticipantBorderColor #334155
+    ParticipantBackgroundColor #F8FAFC
+    ParticipantFontSize 11
+    ParticipantFontStyle bold
+    ActorBorderColor #1E293B
+    ActorBackgroundColor #F8FAFC
+}
+
+actor "Butcher\n(Sender)" as butcher
+participant "Butcher App\n(Terminal 1)" as bApp
+participant "InventoryDataService\n(src/data/)" as dataService
+database "Firebase Firestore\n(Sync Broker)" as firestore
+participant "Restaurant App\n(Terminal 2)" as rApp
+actor "Kitchen Staff\n(Receiver)" as kitchen
+actor "Owner\n(Supervisor)" as owner
+
+autonumber 3.0
+
+== 1. Outbound Transfer Creation & Reservation ==
+butcher -> bApp : Create Transfer (to: "restaurant", lines: [Item, 10.0 kg])
+activate bApp
+bApp -> dataService : createTransfer("butcher", "restaurant", lines)
+activate dataService
+
+dataService -> dataService : generateUUID() -> transferId
+dataService -> dataService : createTransferEntity(status: "Sent")
+dataService -> dataService : recordStockMovement(type: "transfer", qty: -10.0 kg)
+dataService -> firestore : setDoc(branches/{branchId}/transfers/{transferId})
+activate firestore
+firestore --> dataService : Document Written
+deactivate firestore
+dataService --> bApp : Transfer Entity (status: "Sent")
+deactivate dataService
+bApp --> butcher : Display Transfer Dispatched Ticket
+deactivate bApp
+
+== 2. Real-Time Notification & Inbound Inspection ==
+firestore -> rApp : onSnapshot(newTransferEvent)
+activate rApp
+rApp -> rApp : Play sound chime & display pending transfer badge
+kitchen -> rApp : Open Transfer Details Screen
+rApp --> kitchen : Display Sent Manifest (Item: "شاورما", Sent: 10.0 kg)
+
+kitchen -> kitchen : Physically weigh delivery on kitchen scale
+kitchen -> rApp : Enter verified weight for item
+
+== 3. Discrepancy Evaluation & Receipt Processing ==
+alt [Happy Path: Received Weight Matches Sent Weight (+/- 1% tolerance)]
+    kitchen -> rApp : Tap "Confirm & Accept / استلام وتأكيد"
+    rApp -> dataService : receiveTransfer(transferId, verifiedLines)
+    activate dataService
+    dataService -> dataService : setStatus("Received")
+    dataService -> dataService : recordStockMovement(type: "transfer", location: "restaurant", qty: +10.0 kg)
+    dataService -> firestore : updateDoc(transfers/{transferId}, { status: "Received", receivedAt })
+    activate firestore
+    firestore --> dataService : Updated
+    deactivate firestore
+    dataService --> rApp : Transfer (Received)
+    deactivate dataService
+    rApp --> kitchen : Success Toast: "تم الاستلام وتحديث رصيد المطعم"
+    
+    firestore -> bApp : onSnapshot(transferStatus = "Received")
+    activate bApp
+    bApp --> butcher : Notice: "تم تأكيد استلام الشحنة من قبل المطعم"
+    deactivate bApp
+
+else [Discrepancy Flow (UC-20b): Received Weight < Sent Weight (e.g. 8.8 kg)]
+    rApp -> rApp : Highlight -1.2 kg discrepancy in RED
+    kitchen -> rApp : Select dispute code: "transit_spill" (تلف أثناء النقل)
+    kitchen -> rApp : Enter notes: "كيس ممزق مع تسرب السوائل"
+    kitchen -> rApp : Tap "Accept with Discrepancy / استلام مع تسجيل فرق"
+    
+    rApp -> dataService : receiveTransfer(transferId, lines, { reason: "transit_spill", notes })
+    activate dataService
+    dataService -> dataService : setStatus("Discrepancy")
+    dataService -> dataService : recordStockMovement(type: "transfer", location: "restaurant", qty: +8.8 kg)
+    dataService -> dataService : recordStockMovement(type: "waste", location: "butcher", qty: -1.2 kg, reason: "transit_spill")
+    dataService -> firestore : updateDoc(transfers/{transferId}, { status: "Discrepancy", discrepancyReason })
+    activate firestore
+    firestore --> dataService : Updated
+    deactivate firestore
+    dataService --> rApp : Transfer (Discrepancy)
+    deactivate dataService
+    rApp --> kitchen : Toast: "تم تسجيل الشحنة مع عجز 1.2 كجم"
+    
+    firestore -> bApp : onSnapshot(transferStatus = "Discrepancy")
+    activate bApp
+    bApp --> butcher : Warning Alert: "تم تسجيل فرق وزن (-1.2 كجم) للشحنة"
+    deactivate bApp
+    
+    firestore -> owner : Push High-Priority Discrepancy Notification
+    activate owner
+    owner --> owner : View variance on Owner Analytics Dashboard
+    deactivate owner
+end
+deactivate rApp
+
+@enduml

@@ -1,0 +1,124 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 7 — Architecture View 2: Physical Runtime Architecture
+' Sources: src/*, docs/storage-architecture.md, capacitor.config.ts, firebase.json
+' UML 2.5 Strict Physical Runtime Processes, Databases & Communication Protocols
+
+title Smart Inventory — Physical Runtime Process Architecture
+
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+
+skinparam node {
+    BackgroundColor #F8FAFC
+    BorderColor #334155
+    BorderThickness 1.2
+    FontColor #0F172A
+    FontSize 11
+    FontStyle bold
+}
+
+skinparam component {
+    BackgroundColor #FFFFFF
+    BorderColor #64748B
+    BorderThickness 1.1
+    FontColor #0F172A
+    FontSize 10
+}
+
+skinparam database {
+    BackgroundColor #FEF3C7
+    BorderColor #D97706
+    FontColor #78350F
+    FontSize 10
+}
+
+skinparam queue {
+    BackgroundColor #F5F3FF
+    BorderColor #7C3AED
+    FontColor #4C1D95
+    FontSize 10
+}
+
+' ─── Client Runtime Process ──────────────────────────────────────
+node "Client Device: Android POS / Mobile / Web Browser" as ClientHost {
+    
+    node "OS Process: Native Android (com.smartinventory.butcher)" as AndroidProc {
+        component [Capacitor 8 Bridge\n(JNI / WebMessageBridge)] as CapBridge
+        component [Bluetooth LE Manager\n(android.bluetooth.BluetoothGatt)] as NativeBle
+        component [Speech Recognizer Service\n(android.speech.SpeechRecognizer)] as NativeSpeech
+        database "SQLite Engine\n(SQLCipher Encrypted DB)\n[smart_inventory.db]" as NativeSqlite
+    }
+
+    node "Process: Chromium / WebKit WebView Runtime" as WebProc {
+        
+        node "Thread: Main JavaScript V8 Event Loop" as MainThread {
+            component [React 19 SPA Controller\n(Reactive State & Virtual DOM)] as ReactApp
+            component [Canvas 2D Rendering Engine\n(2x DPI Buffer & jsPDF)] as CanvasEngine
+            component [InventoryStorage\n(In-Memory Cache: Map<k, v>)] as MemCache
+        }
+        
+        node "Background Timers & Daemons" as Daemons {
+            component [Presence Heartbeat Timer\n(12s recurring tick)] as HeartbeatTimer
+            queue "Pending Write Queue\n(250ms debounced queue)" as WriteQueue
+        }
+        
+        database "IndexedDB Storage Engine\n[smart-inventory / keyvalue]" as IdbEngine
+    }
+}
+
+' ─── Hardware Peripheral Process ─────────────────────────────────
+node "BLE Scale Hardware Device" as ScaleHardware {
+    component [Scale Microcontroller SoC\n(Nordic nRF52 / TI CC2640)] as ScaleSoC
+    component [GATT Server\nService: 0x181D / Char: 0x2A9D] as GattServer
+    ScaleSoC -> GattServer
+}
+
+' ─── Cloud Infrastructure (Google Cloud / Firebase) ─────────────
+cloud "Google Cloud Platform / Firebase Infrastructure" as CloudInfra {
+    
+    node "Firebase Authentication Service" as AuthCloud {
+        component [Token Authority\n(Anonymous & Email/Password JWTs)] as JwtAuth
+    }
+    
+    node "Google Cloud Firestore Service" as FirestoreCloud {
+        component [Real-time Listener Daemon\n(WebSocket Push Engine)] as ListenerEngine
+        database "Firestore Distributed NoSQL DB\nbranches/{branchId}/\n├── keys/{key}\n├── transfers/{id}\n├── presence/{deviceId}\n└── audits/{id}" as FirestoreDb
+        ListenerEngine --> FirestoreDb
+    }
+    
+    node "Firebase Hosting / CDN" as HostingCloud {
+        component [Static Asset Distribution\n(index.html, assets/*.js, *.css)] as StaticCdn
+    }
+}
+
+' ─── External Communications Gateway ────────────────────────────
+node "Meta / WhatsApp Communication Rail" as WhatsAppCloud {
+    component [WhatsApp Web & Mobile Protocol Gateway\n(https://wa.me/?text=...)] as WaGateway
+}
+
+' Inter-Process Communication & Protocols
+ScaleHardware -- NativeBle : "Bluetooth LE 5.0 (ATT / GATT 2.4 GHz RF)\nNotifications: 0x2A9D"
+NativeBle <--> CapBridge : "Android OS JNI"
+NativeSpeech <--> CapBridge : "Android OS JNI"
+NativeSqlite <--> CapBridge : "Android OS JNI (sqlite3)"
+
+CapBridge <--> WebProc : "Capacitor IPC Message Bridge"
+ReactApp <--> CapBridge : "Plugin Calls (@capacitor-community/*)"
+
+ReactApp <--> MemCache : "In-Memory RAM access (<1ms)"
+ReactApp <--> IdbEngine : "W3C IndexedDB API (Structured Clone)"
+ReactApp --> CanvasEngine : "HTML5 Canvas 2D Context"
+
+ReactApp --> WriteQueue : "Enqueues mutations"
+WriteQueue --> FirestoreCloud : "HTTPS / TLS 1.3 REST (250ms debounced batches)"
+HeartbeatTimer --> FirestoreCloud : "12-second Heartbeat Write (WSS / HTTPS)"
+FirestoreCloud --> ReactApp : "WSS / gRPC onSnapshot Real-time Events"
+
+ReactApp ..> JwtAuth : "HTTPS / Token Exchange"
+HostingCloud ..> WebProc : "HTTPS Static Bundle Download"
+ReactApp ..> WaGateway : "Deep-link Intent / HTTPS wa.me"
+
+@enduml

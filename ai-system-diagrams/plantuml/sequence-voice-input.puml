@@ -1,0 +1,102 @@
+@startuml
+' Smart Inventory Movement & Counting System
+' Deliverable 6 — Sequence Diagram (Flow 2): Arabic Voice Input & Speech Parsing
+' Sources: src/features/speechRecognition.ts, src/App.tsx, src/inventoryCatalog.ts
+' UML 2.5 Strict Sequence Diagram with Activation Bars & Interaction Frames
+
+title Smart Inventory — Sequence Diagram\nFlow 2: Arabic Voice Input Capture, Phonetic Normalization & Fuzzy Parsing
+
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName "Segoe UI", "Helvetica", sans-serif
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+
+skinparam sequence {
+    ArrowColor #1E293B
+    ArrowThickness 1.2
+    LifeLineBorderColor #2563EB
+    LifeLineBackgroundColor #EFF6FF
+    ParticipantBorderColor #334155
+    ParticipantBackgroundColor #F8FAFC
+    ParticipantFontSize 11
+    ParticipantFontStyle bold
+    ActorBorderColor #1E293B
+    ActorBackgroundColor #F8FAFC
+}
+
+actor "Operator\n(Butcher/Kitchen)" as operator
+participant "AppController\n(src/App.tsx)" as app
+participant "SpeechRecognitionEngine\n(src/features/speechRecognition.ts)" as voice
+participant "Web / Capacitor Speech API\n(Native OS Service)" as speechAPI
+participant "Product Catalog\n(src/inventoryCatalog.ts)" as catalog
+
+autonumber 2.0
+
+== 1. Audio Capture Initialization ==
+operator -> app : Tap Microphone Action Icon
+activate app
+app -> voice : startListening(onResult, onError)
+activate voice
+voice -> speechAPI : webkitSpeechRecognition.start() / SpeechRecognition.start()
+activate speechAPI
+speechAPI --> voice : Audio capture started (lang: "ar-SA")
+voice --> app : isListening = true
+app -> app : Display pulsing audio visualizer overlay
+
+== 2. Spoken Audio Processing ==
+operator -> speechAPI : Speak Arabic phrase: "لحم بتلو اثنان وعشرون كيلو ونصف"
+speechAPI -> speechAPI : Continuous audio stream buffer & acoustic decode
+speechAPI --> voice : onresult(event.results[0][0].transcript)
+deactivate speechAPI
+
+voice -> voice : parseArabicSpeech(rawTranscript, catalog.getItems())
+activate voice
+
+group Arabic Phonetic Normalization
+    voice -> voice : normalizeArabicText(transcript)
+    note right of voice
+      1. Strip Tashkeel diacritics
+      2. Normalize Alef variants: [أ إ آ] -> ا
+      3. Normalize Yaa/Alef Maqsoura: [ى] -> ي
+      4. Normalize Taa Marbouta: [ة] -> ه
+    end note
+end
+
+group Phonetic Number & Fraction Parsing
+    voice -> voice : parseArabicNumerals("اثنان وعشرون ونصف")
+    note right of voice
+      Compound grammar evaluator:
+      "اثنان وعشرون" = 22
+      "ونصف" = + 0.5
+      Result quantity = 22.5
+    end note
+end
+
+group Fuzzy Catalog Entity Resolution
+    voice -> catalog : searchByArabicName(normalizedName)
+    activate catalog
+    catalog --> voice : Item Candidate: "لحم بتلو" (Levenshtein match score = 0.94)
+    deactivate catalog
+end
+
+voice --> app : onResult({ item: "لحم بتلو", quantity: 22.5, unit: "kg" })
+deactivate voice
+deactivate voice
+
+== 3. Operator Confirmation & Submission ==
+app -> app : Display confirmation prompt:\n"هل تقصد: لحم بتلو 22.5 كجم؟"
+
+alt [Operator Confirms]
+    operator -> app : Tap "Confirm / تأكيد" (or voice "نعم")
+    app -> app : handleCountSubmit(matchedItem.id, 22.5)
+    app -> app : updateItemVarianceAndBadge()
+    app --> operator : Toast: "تم تسجيل الجرد بنجاح (صوتياً)"
+else [Operator Rejects / Correction]
+    operator -> app : Tap "Edit / تعديل"
+    app -> app : Pre-fill manual keypad with 22.5
+    app --> operator : Open Manual Keypad Modal (UC-04)
+end
+deactivate app
+
+@enduml

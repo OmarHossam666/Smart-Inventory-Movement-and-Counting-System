@@ -12,21 +12,34 @@ import urllib.request
 from pathlib import Path
 
 def render_mermaid_file(mmd_path: Path, output_dir: Path) -> Path:
-    """Render a .mmd file to standalone SVG."""
+    """Render a .mmd file to standalone SVG with pako fallback for large diagrams."""
     print(f"Reading {mmd_path.name}...")
     with open(mmd_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Base64 URL safe encode
+    out_file = output_dir / f"{mmd_path.stem}.svg"
     b64 = base64.urlsafe_b64encode(content.encode("utf-8")).decode("utf-8")
     url = f"https://mermaid.ink/svg/{b64}"
-    
-    out_file = output_dir / f"{mmd_path.stem}.svg"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-    
+
     print(f"  Fetching SVG from Mermaid rendering service...")
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = resp.read()
+    data = None
+    if len(url) < 2000:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = resp.read()
+        except Exception:
+            data = None
+
+    if data is None:
+        import json, zlib
+        obj = {"code": content, "mermaid": {"theme": "default"}}
+        comp = zlib.compress(json.dumps(obj).encode("utf-8"), level=9)
+        pako_b64 = base64.urlsafe_b64encode(comp).decode("utf-8")
+        pako_url = f"https://mermaid.ink/svg/pako:{pako_b64}"
+        req = urllib.request.Request(pako_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
     
     with open(out_file, "wb") as f:
         f.write(data)

@@ -1,0 +1,52 @@
+%% Smart Inventory Movement & Counting System
+%% Deliverable 6 — Sequence Diagram (Mermaid Companion — Core System Interaction Loop)
+%% Sources: src/App.tsx, src/features/*, src/data/*
+
+sequenceDiagram
+    autonumber
+    actor Butcher as 👤 Butcher (الملحمة)
+    participant App as 📱 App Controller
+    participant Scale as 📡 BLE Scale (0x181D)
+    participant DataService as ⚙️ InventoryDataService
+    participant LocalDB as 💾 Local Storage
+    participant Firestore as ☁️ Firebase Firestore
+    actor Restaurant as 👤 Restaurant (المطعم)
+    actor Owner as 🔑 Owner (المالك)
+
+    %% ── Phase 1: BLE Counting Flow ──────────────────────────────
+    Butcher->>App: Tap Item Card ("لحم بتلو")
+    App->>Scale: startWeightStream()
+    Scale-->>App: Stabilized Weight (12.50 kg)
+    Butcher->>App: Confirm Count
+    App->>LocalDB: setItem("counts", { "item-1": 12.50 })
+    App-)Firestore: syncKey("counts", { "item-1": 12.50 }) (250ms debounce)
+
+    %% ── Phase 2: Inter-Location Transfer ────────────────────────
+    Butcher->>App: Create Transfer (To: Restaurant, 10.0 kg)
+    App->>DataService: createTransfer(from, to, lines)
+    DataService->>LocalDB: Record Outbound Movement (-10.0 kg)
+    DataService->>Firestore: setDoc(transfers/tx-001, status: "Sent")
+    
+    Firestore-->>App: onSnapshot(newTransferEvent)
+    App-->>Restaurant: Pending Transfer Alert Badge
+    
+    Restaurant->>App: Weigh Incoming Meat (Verified: 10.0 kg)
+    Restaurant->>App: Accept Transfer
+    App->>DataService: receiveTransfer(tx-001, lines)
+    DataService->>LocalDB: Credit Inbound Movement (+10.0 kg)
+    DataService->>Firestore: updateDoc(tx-001, status: "Received")
+    Firestore-->>App: onSnapshot(tx-001 is Received)
+    App-->>Butcher: Confirmation: Shipment Received
+
+    %% ── Phase 3: Audit Finalization & PDF ───────────────────────
+    Owner->>App: Initiate Audit Session
+    App->>App: Compute Variance & Shrinkage
+    Owner->>App: Enter 4-Digit Owner PIN
+    App->>DataService: saveAuditRecord(auditSnapshot)
+    DataService->>LocalDB: Persist Immutable Audit
+    DataService->>Firestore: Push Audit Snapshot
+    
+    App->>App: Render 2x High-DPI Canvas
+    App->>App: Compile jsPDF Vector Document
+    Owner->>App: Click Share to WhatsApp
+    App-)Owner: Launch https://wa.me/?text=... (Summary & PDF)
