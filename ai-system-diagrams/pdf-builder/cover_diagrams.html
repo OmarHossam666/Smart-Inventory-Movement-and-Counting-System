@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cover Page — Architectural Blueprint & UML 2.5 Diagram Portfolio</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap');
+
+    :root {
+      --color-slate-900: #0f172a;
+      --color-slate-800: #1e293b;
+      --color-slate-700: #334155;
+      --color-slate-600: #475569;
+      --color-slate-500: #64748b;
+      --color-slate-400: #94a3b8;
+      --color-slate-300: #cbd5e1;
+      --color-slate-200: #e2e8f0;
+      --color-slate-100: #f1f5f9;
+      --color-slate-50:  #f8fafc;
+      
+      --color-emerald-600: #059669;
+      --color-emerald-500: #10b981;
+      --color-emerald-400: #34d399;
+      --color-indigo-600:  #4f46e5;
+      --color-sky-500:     #0ea5e9;
+      --color-sky-400:     #38bdf8;
+
+      --font-display: 'Cairo', 'Inter', system-ui, -apple-system, sans-serif;
+      --font-body: 'Inter', 'IBM Plex Sans Arabic', system-ui, -apple-system, sans-serif;
+      --font-mono: 'Fira Code', Consolas, Menlo, monospace;
+    }
+
+    @page {
+      margin: 0;
+      size: A4 portrait;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 210mm;
+      height: 297mm;
+      background: var(--color-slate-900);
+      font-family: var(--font-body);
+      color: #ffffff;
+      overflow: hidden;
+    }
+
+    .cover-page {
+      position: relative;
+      width: 210mm;
+      height: 297mm;
+      padding: 16mm 18mm 14mm 18mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      background: radial-gradient(circle at 85% 15%, #1e293b 0%, #0f172a 70%);
+    }
+
+    .cover-bg-geometry {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      background-image: 
+        radial-gradient(rgba(16, 185, 129, 0.08) 1.5px, transparent 1.5px),
+        radial-gradient(rgba(56, 189, 248, 0.05) 1.5px, transparent 1.5px);
+      background-size: 24px 24px, 48px 48px;
+      background-position: 0 0, 12px 12px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .cover-content {
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Top Brand Header */
+    .cover-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .cover-brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .cover-logo-img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 4px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .cover-brand-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cover-brand-en {
+      font-family: var(--font-display);
+      font-size: 13pt;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+
+    .cover-brand-ar {
+      font-family: 'Cairo', sans-serif;
+      font-size: 10pt;
+      font-weight: 700;
+      color: var(--color-emerald-400);
+      direction: rtl;
+    }
+
+    .cover-standard-badge {
+      text-align: right;
+    }
+
+    .badge-title {
+      display: block;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--color-emerald-400);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      font-family: var(--font-mono);
+      font-size: 7.5pt;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      letter-spacing: 0.05em;
+      margin-bottom: 3px;
+    }
+
+    .badge-sub {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 7pt;
+      color: var(--color-slate-400);
+    }
+
+    /* Hero Center Section */
+    .cover-hero {
+      margin-top: 18mm;
+      margin-bottom: auto;
+    }
+
+    .cover-doc-type {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: var(--color-emerald-400);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+    }
+
+    .cover-doc-type::before {
+      content: "";
+      display: inline-block;
+      width: 18px;
+      height: 3px;
+      background: var(--color-emerald-400);
+      border-radius: 2px;
+    }
+
+    h1 {
+      margin: 0 0 6px 0;
+      font-family: var(--font-display);
+      font-size: 23pt;
+      font-weight: 900;
+      color: #ffffff;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    .project-name {
+      margin: 0 0 4px 0;
+      font-family: var(--font-display);
+      font-size: 19pt;
+      font-weight: 800;
+      color: var(--color-sky-400);
+      line-height: 1.2;
+    }
+
+    .project-arabic {
+      margin: 0 0 16px 0;
+      font-family: 'Cairo', sans-serif;
+      font-size: 19pt;
+      font-weight: 900;
+      color: var(--color-emerald-400);
+      direction: rtl;
+      line-height: 1.25;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .tagline {
+      font-size: 9.5pt;
+      line-height: 1.55;
+      color: var(--color-slate-300);
+      max-width: 95%;
+      margin: 0 0 20px 0;
+    }
+
+    /* Metadata Card (Team & Supervisors) */
+    .cover-metadata-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 14px 18px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+    .cover-meta-col h4 {
+      margin: 0 0 10px 0;
+      font-family: var(--font-mono);
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-emerald-400);
+    }
+
+    .cover-person-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 8.8pt;
+    }
+
+    .cover-person-entry:last-child {
+      margin-bottom: 0;
+    }
+
+    .cover-person-name {
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .cover-person-id {
+      font-family: var(--font-mono);
+      font-size: 7.8pt;
+      color: var(--color-sky-400);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      font-weight: 600;
+    }
+
+    .cover-supervisor-entry {
+      font-size: 8.8pt;
+      color: #ffffff;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cover-supervisor-entry:last-child {
+      margin-bottom: 0;
+    }
+
+    .cover-supervisor-entry strong {
+      color: #ffffff;
+    }
+
+    /* Footer Tech Badges */
+    .cover-footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      padding-top: 12px;
+    }
+
+    .cover-badges-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .cover-chip {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--color-slate-200);
+      font-family: var(--font-mono);
+      font-size: 7pt;
+      padding: 2.5px 7px;
+      border-radius: 4px;
+    }
+
+    .cover-chip-highlight {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: var(--color-emerald-400);
+      font-weight: 700;
+    }
+
+    .cover-release-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 7.5pt;
+      color: var(--color-slate-400);
+      font-family: var(--font-mono);
+    }
+  </style>
+</head>
+<body>
+  
+  <div class="cover-page">
+    <div class="cover-bg-geometry"></div>
+
+    <div class="cover-content cover-header">
+      <div class="cover-brand-lockup">
+        <img class="cover-logo-img" src="data:image/png;base64,{{LOGO_B64}}" alt="Smart Inventory Logo" />
+        <div class="cover-brand-text">
+          <span class="cover-brand-en">Smart Inventory System</span>
+          <span class="cover-brand-ar">نظام حركة وجرد المخزون</span>
+        </div>
+      </div>
+      <div class="cover-standard-badge">
+        <span class="badge-title">ADVANCED SOFTWARE ENGINEERING</span>
+        <span class="badge-sub">UML 2.5 SUPERSTRUCTURE • KRUCHTEN 4+1</span>
+      </div>
+    </div>
+
+    <div class="cover-content cover-hero">
+      <div class="cover-doc-type">Architectural System Blueprints • UML 2.5 Diagram Portfolio</div>
+      <h1>Advanced Software Engineering Project</h1>
+      <h2 class="project-name">Smart Inventory Movement and Counting System</h2>
+      <h2 class="project-arabic">نظام حركة وجرد المخزون</h2>
+      <p class="tagline">
+        An exhaustive architectural blueprint portfolio compiling all 28 visual models across Use Case, Activity Swimlanes, Structural Domain Class, Runtime Interaction Sequences, Kruchten 4+1 Architectural Views, and State Machine Lifecycles—grounded 100% in codebase symbols with zero omission.
+      </p>
+
+      <div class="cover-metadata-grid">
+        <div class="cover-meta-col">
+          <h4>Team Members (Students)</h4>
+          <div class="cover-person-entry">
+            <span class="cover-person-name">Nour Osama Farag</span>
+            <span class="cover-person-id">ID: 222101357</span>
+          </div>
+          <div class="cover-person-entry">
+            <span class="cover-person-name">Bassant Ahmed El-Metwally</span>
+            <span class="cover-person-id">ID: 222101490</span>
+          </div>
+        </div>
+
+        <div class="cover-meta-col">
+          <h4>Supervision &amp; Evaluation</h4>
+          <div class="cover-supervisor-entry">
+            <span>Supervisor:</span>
+            <strong>Dr. Ahmed Badawy</strong>
+          </div>
+          <div class="cover-supervisor-entry">
+            <span>Supervisor:</span>
+            <strong>Eng. Abdullah Amir</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cover-content cover-footer">
+      <div class="cover-badges-row">
+        <span class="cover-chip cover-chip-highlight">28 Vector Diagrams</span>
+        <span class="cover-chip cover-chip-highlight">UML 2.5 Superstructure</span>
+        <span class="cover-chip cover-chip-highlight">Kruchten 4+1 Views</span>
+        <span class="cover-chip">React 19</span>
+        <span class="cover-chip">TypeScript 5.7</span>
+        <span class="cover-chip">Vite 8</span>
+        <span class="cover-chip">Tailwind CSS v4</span>
+        <span class="cover-chip">Capacitor 8 (Android)</span>
+        <span class="cover-chip">Google Cloud Firestore</span>
+        <span class="cover-chip">Firebase Auth</span>
+        <span class="cover-chip">SQLite / IndexedDB</span>
+        <span class="cover-chip">BLE Scale (GATT 0x181D)</span>
+        <span class="cover-chip">Arabic Voice Engine</span>
+        <span class="cover-chip">Canvas + jsPDF</span>
+      </div>
+      <div class="cover-release-meta">
+        <span><strong>Document Version:</strong> 1.0 (Diagram Portfolio)</span>
+        <span><strong>Generated Date:</strong> 2026-11-24</span>
+        <span><strong>Traceability Scope:</strong> 100% Code-Grounded Real Symbols</span>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

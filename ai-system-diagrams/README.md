@@ -19,30 +19,42 @@ Every requirement, actor, class, state transition, and deployment node is **100%
 
 ---
 
-## 📄 Compiled Publication PDF & Automated Build Pipeline
+## 📄 Compiled Publication PDFs & Automated Build Pipelines
 
-All 9 deliverables, 28 architectural diagrams, 52 Functional Requirements, 25 Non-Functional Requirements, 59 Use Cases, and the Master Requirements Traceability Matrix (RTM) have been compiled into a single, publication-grade document:
+Two publication-grade PDF documents are maintained and reproducible via automated headless Chromium pipelines:
+
+### 1. 🖼️ Architectural Diagram Portfolio (Diagrams-Only Edition)
+A streamlined, high-impact architectural booklet containing **only the 28 visual diagrams** with an editorial cover page, visual gallery index, and concise 1-sentence architectural scope bars—zero long explanations or narrative clutter:
+
+- **Compiled PDF**: [**`ai-system-diagrams/ASE_System_Architecture_Diagrams.pdf`**](ASE_System_Architecture_Diagrams.pdf) (also mirrored at [`ASE_Diagram_Portfolio.pdf`](ASE_Diagram_Portfolio.pdf))
+- **Specifications**: **30 Pages**, **5.13 MB**, high-impact visual presentation.
+- **Orientation**: Adaptive layout featuring **12 Portrait pages** and **18 Landscape pages** (each diagram assigned its optimal aspect ratio).
+- **Navigation**: Clickable Visual Table of Contents on Page 2 and full hierarchical PDF bookmarks outline.
+- **Single Rebuild Command**:
+  ```bash
+  node ai-system-diagrams/pdf-builder/build_diagrams_pdf.js
+  ```
+- **Automated QA Verification Command**:
+  ```bash
+  python ai-system-diagrams/pdf-builder/qa_diagrams_audit.py
+  ```
+
+---
+
+### 2. 📚 Full Technical Documentation & Architecture Deliverables (Complete Edition)
+The complete ISO 29148 & UML 2.5 documentation compiling all 9 deliverables, 52 Functional Requirements, 25 Non-Functional Requirements, 59 Use Cases, 14 Cockburn Fully Dressed Scenarios, and the Master Requirements Traceability Matrix (RTM):
 
 - **Compiled PDF**: [**`ai-system-diagrams/ASE_Project_Deliverables.pdf`**](ASE_Project_Deliverables.pdf)  
-- **Specifications**: 118 pages, 8.07 MB, publication-grade styling with the codebase's real design system and brand assets.
-- **Orientation**: Adaptive layout featuring 86 Portrait pages and 32 Landscape pages for complex UML diagrams and matrices.
-- **Navigation**: Clickable Table of Contents with exact two-pass page numbers and full hierarchical PDF bookmarks / outline.
-
-### Single Rebuild Command
-
-To regenerate the PDF document whenever markdown specifications, diagrams, or styling change:
-
-```bash
-node ai-system-diagrams/pdf-builder/build.js
-```
-
-### Automated QA & Verification Audit
-
-To execute the 8-point quality assurance verification suite (validating metadata, page orientations, all 28 diagrams, requirements completeness, and visual previews):
-
-```bash
-python ai-system-diagrams/pdf-builder/qa_audit.py
-```
+- **Specifications**: **118 Pages**, **8.07 MB**, publication-grade styling with real codebase design system.
+- **Orientation**: Adaptive layout with **86 Portrait pages** and **32 Landscape pages**.
+- **Single Rebuild Command**:
+  ```bash
+  node ai-system-diagrams/pdf-builder/build.js
+  ```
+- **Automated QA Verification Command**:
+  ```bash
+  python ai-system-diagrams/pdf-builder/qa_audit.py
+  ```
 
 ---
 
